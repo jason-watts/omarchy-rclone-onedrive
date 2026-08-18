@@ -4,6 +4,8 @@ Omarchy bar widget for an **rclone** OneDrive mount. It shows whether the mount 
 
 This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugin talks to the abraunegg `onedrive` CLI. This one is for people who mount OneDrive with `rclone mount`.
 
+**Walk through first-time setup:** [QUICKSTART.md](QUICKSTART.md).
+
 ## What it does
 
 - Bar icon: official OneDrive cloud mark, themed to the shell. Bright when the mount is healthy, dim when stopped, urgent when failed, stale, or needs reauth.
