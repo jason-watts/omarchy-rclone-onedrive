@@ -440,11 +440,11 @@ Panel {
           }
 
           Toggle {
-            visible: !store.needsSetup && store.unitScope === "user"
+            visible: !store.needsSetup
             width: parent.width
             label: "Mount at boot"
             description: store.lingerActive ? "User services start before login" : "Mounts when you log in"
-            checked: store.lingerActive
+            checked: store.lingerActive === true
             hasCursor: root.cursorActive && root.focusSection === "linger"
             foreground: root.foreground
             fontFamily: root.fontFamily

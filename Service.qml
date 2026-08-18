@@ -162,7 +162,9 @@ Item {
     cacheBytes = Number(parsed.cacheBytes || 0)
     transferring = parsed.transferring || []
     files = parsed.files || []
-    excludeNote = String(parsed.excludeNote || "Personal Vault excluded")
+    excludeNote = parsed.excludeNote !== undefined && parsed.excludeNote !== null
+      ? String(parsed.excludeNote)
+      : ""
     lastJournal = String(parsed.lastJournal || "")
     authHint = parsed.authHint === true
     rcloneInstalled = parsed.rcloneInstalled !== false
