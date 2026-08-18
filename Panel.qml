@@ -312,7 +312,7 @@ Panel {
 
   function askRemoveRemote() {
     if (store.mutating || String(store.remote || "") === "") return
-    removeConfirm.selectedIndex = 0
+    removeConfirm.selectedIndex = 1
     removeConfirm.opened = true
     Qt.callLater(function() { if (removeConfirm) removeConfirm.forceActiveFocus() })
   }
@@ -365,6 +365,12 @@ Panel {
     target: store
     function onFilesChanged() { root.ensureCursor() }
     function onTransferringChanged() { root.ensureCursor() }
+    function onNeedsSetupChanged() {
+      if (store.needsSetup) {
+        root.focusSection = "setup"
+        if (panelFlick) panelFlick.contentY = 0
+      }
+    }
   }
 
   IpcHandler {

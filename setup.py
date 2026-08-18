@@ -343,7 +343,28 @@ def delete_remote(bin_path: str, name: str) -> str:
     return ""
 
 
+def lazy_unmount(mount: str) -> None:
+    if not mount:
+        return
+    try:
+        subprocess.run(
+            ["/usr/bin/fusermount3", "-uz", mount],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
 def cmd_remove(args: argparse.Namespace) -> int:
+    try:
+        return _cmd_remove(args)
+    except Exception as exc:
+        return fail(str(exc)[:280])
+
+
+def _cmd_remove(args: argparse.Namespace) -> int:
     binary = rclone_bin()
     if not binary:
         return fail("rclone is not installed")
@@ -351,25 +372,20 @@ def cmd_remove(args: argparse.Namespace) -> int:
     if not remote:
         return fail("No remote to remove")
     mount = str(Path(args.mount).expanduser()) if args.mount else find_mount(remote)
-    unit = args.unit or f"rclone-{remote}.service"
-    stop_user_unit(unit, mount)
-    if mount and mount != find_mount(remote):
-        subprocess.run(
-            ["/usr/bin/fusermount3", "-uz", mount],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+    unit = getattr(args, "unit", "") or f"rclone-{remote}.service"
+    # Detach FUSE first so systemctl stop does not hang on a busy mount.
+    lazy_unmount(mount)
     leftover = find_mount(remote)
-    if leftover:
-        subprocess.run(
-            ["/usr/bin/fusermount3", "-uz", leftover],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    if user_unit_path(unit).is_file() or unit.startswith("rclone-"):
-        disable_user_unit(unit)
+    lazy_unmount(leftover)
+    try:
+        stop_user_unit(unit, mount or leftover)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    try:
+        if user_unit_path(unit).is_file() or unit.startswith("rclone-"):
+            disable_user_unit(unit)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
     error = delete_remote(binary, remote)
     if error:
         return fail(error, remote=remote, mount=mount, unit=unit)
@@ -490,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--region", default="global")
     parser.add_argument("--remote", default="")
     parser.add_argument("--mount", default="")
+    parser.add_argument("--unit", default="")
     parser.add_argument("--rc", default="http://127.0.0.1:5572")
     parser.add_argument("--reconnect", action="store_true")
     return parser

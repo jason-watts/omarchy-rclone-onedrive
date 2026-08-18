@@ -298,7 +298,8 @@ Item {
     setupProcess.command = [
       "/usr/bin/python3", setupHelperPath, "remove",
       "--remote", name,
-      "--mount", String(mountPath || "")
+      "--mount", String(mountPath || ""),
+      "--unit", String(unit || "")
     ]
     setupProcess.running = true
   }
@@ -445,10 +446,15 @@ Item {
         root.unit = ""
         root.running = false
         root.mounted = false
+        root.probeOk = false
+        root.files = []
+        root.transferring = []
         root.needsSetup = true
         root.needsAuth = false
         root.needsMount = false
         root.setupRemote = ""
+        root.state = "stopped"
+        root.statusText = "Set up rclone"
       } else {
         root.lastError = ""
         root.actionStatus = parsed.action === "reconnect" ? "Signed in" : "OneDrive is ready"
