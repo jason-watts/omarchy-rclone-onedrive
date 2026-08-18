@@ -241,6 +241,8 @@ Wants=network-online.target
 Type=notify
 ExecStart={binary} mount {remote}: {mount} --vfs-cache-mode full --log-level INFO --rc --rc-addr {rc_addr} --rc-no-auth
 ExecStop=/usr/bin/fusermount3 -uz {mount}
+TimeoutStopSec=10
+SuccessExitStatus=143
 Restart=on-failure
 
 [Install]
@@ -248,6 +250,22 @@ WantedBy=default.target
 """
     unit_path.write_text(body, encoding="utf-8")
     return unit, str(unit_path)
+
+
+def stop_user_unit(unit: str, mount: str) -> None:
+    subprocess.run(
+        ["systemctl", "--user", "stop", unit],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if mount:
+        subprocess.run(
+            ["/usr/bin/fusermount3", "-uz", mount],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
 
 
 def enable_user_unit(unit: str) -> str:
@@ -285,6 +303,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if error:
         return fail(error)
     if args.reconnect and remote in existing_remotes(binary):
+        unit = f"rclone-{remote}.service"
+        stop_user_unit(unit, mount)
         proc = subprocess.run(
             [
                 binary,
@@ -302,7 +322,19 @@ def cmd_setup(args: argparse.Namespace) -> int:
         )
         if proc.returncode != 0:
             return fail((proc.stderr or proc.stdout or "token update failed").strip())
-        return emit({"ok": True, "action": "reconnect", "remote": remote, "error": ""})
+        error = enable_user_unit(unit)
+        if error:
+            return fail(error, remote=remote, mount=mount, unit=unit)
+        return emit(
+            {
+                "ok": True,
+                "action": "reconnect",
+                "remote": remote,
+                "mount": mount,
+                "unit": unit,
+                "error": "",
+            }
+        )
     error = create_remote(binary, remote, account, region, token)
     if error:
         return fail(error)
