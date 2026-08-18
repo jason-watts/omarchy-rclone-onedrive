@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 RCLONE_BIN = "/home/jason/.local/bin/rclone"
-URL_RE = re.compile(r"https?://\S+")
+URL_RE = re.compile(r"https?://[^\s\"'<>]+")
 TOKEN_RE = re.compile(r"\{[^{}]*\"access_token\"[^{}]*\}", re.S)
 
 LOGIN_HOST = {
@@ -92,35 +92,46 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
         env=env,
     )
     opened = {"url": ""}
+    err_lines: list[str] = []
 
     def pump_err() -> None:
         assert proc.stderr is not None
         for line in proc.stderr:
+            err_lines.append(line.rstrip())
             match = URL_RE.search(line)
-            if match and not opened["url"]:
-                opened["url"] = match.group(0).rstrip(").,")
+            if not match:
+                continue
+            candidate = match.group(0).rstrip(").,/")
+            # rclone also prints the redirect origin in quotes; only the
+            # /auth?state= link starts the Microsoft login.
+            if "/auth" not in candidate:
+                continue
+            if not opened["url"]:
+                opened["url"] = candidate
                 open_url(opened["url"])
 
-    thread = threading.Thread(target=pump_err, daemon=True)
-    thread.start()
-    try:
-        stdout, _stderr = proc.communicate(timeout=300)
-    except subprocess.TimeoutExpired:
+    err_thread = threading.Thread(target=pump_err, daemon=True)
+    err_thread.start()
+    deadline = time.time() + 300
+    while proc.poll() is None and time.time() < deadline:
+        time.sleep(0.2)
+    if proc.poll() is None:
         proc.kill()
-        proc.communicate()
+        err_thread.join(timeout=1)
         return "", "Microsoft sign-in timed out"
-    thread.join(timeout=1)
+    stdout = proc.stdout.read() if proc.stdout else ""
+    err_thread.join(timeout=1)
+    tail = " ".join(err_lines[-3:]).strip()
     if proc.returncode != 0:
-        return "", "Microsoft sign-in was cancelled or failed"
+        return "", tail or "Microsoft sign-in was cancelled or failed"
     blob = stdout or ""
     match = TOKEN_RE.search(blob)
     if match:
         return match.group(0), ""
-    # rclone sometimes prints the JSON alone
     text = blob.strip()
     if text.startswith("{") and "access_token" in text:
         return text, ""
-    return "", "rclone authorize did not return a token"
+    return "", tail or "rclone authorize did not return a token"
 
 
 def ni(bin_path: str, name: str, extra: list[str]) -> dict:
