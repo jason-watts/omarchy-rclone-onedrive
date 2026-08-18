@@ -52,6 +52,7 @@ Item {
   readonly property bool healthy: state === "healthy"
   readonly property bool alarming: Model.alarming(state)
   readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running || setupProcess.running || lingerProcess.running
+  readonly property bool mutating: controlProcess.running || setupProcess.running || lingerProcess.running
   readonly property string setupHelperPath: resolvedSetupHelper()
   readonly property string helperPath: resolvedHelper()
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 15, 5, 3600)

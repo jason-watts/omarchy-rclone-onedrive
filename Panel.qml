@@ -57,6 +57,9 @@ Panel {
   property int setupIndex: 0
   readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
   readonly property string setupRemoteHint: store.setupAccount === "personal" ? "home" : "work"
+  readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)
+    + Math.min(middle.implicitHeight, Style.space(340))
+    + (footer.visible ? Style.space(12) + footer.implicitHeight : 0)
 
   onHeaderActionCountChanged: clampHeaderIndex()
 
@@ -308,7 +311,7 @@ Panel {
   }
 
   function askRemoveRemote() {
-    if (store.busy || store.remote === "") return
+    if (store.mutating || String(store.remote || "") === "") return
     removeConfirm.selectedIndex = 0
     removeConfirm.opened = true
     Qt.callLater(function() { if (removeConfirm) removeConfirm.forceActiveFocus() })
@@ -415,7 +418,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: panel.fittedContentHeight(root.desiredPanelBody, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -437,24 +440,13 @@ Panel {
         else if (t === "l" || t === "L") root.runSetupAction()
       }
 
-      Flickable {
-        id: panelFlick
+      Column {
+        id: column
         anchors.fill: parent
-        contentWidth: width
-        contentHeight: column.implicitHeight
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        flickableDirection: Flickable.VerticalFlick
-        interactive: contentHeight > height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        spacing: Style.space(12)
 
-        Column {
-          id: column
-          width: panelFlick.width
-          spacing: Style.space(12)
-
-          Item {
-            id: header
+        Item {
+          id: header
             width: parent.width
             implicitHeight: hero.implicitHeight
 
@@ -528,6 +520,23 @@ Panel {
               }
             }
           }
+
+        Flickable {
+          id: panelFlick
+          width: parent.width
+          height: Math.max(0, parent.height - header.height - (footer.visible ? footer.height : 0) - parent.spacing * (footer.visible ? 2 : 1))
+          contentWidth: width
+          contentHeight: middle.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          flickableDirection: Flickable.VerticalFlick
+          interactive: contentHeight > height
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+          Column {
+            id: middle
+            width: panelFlick.width
+            spacing: Style.space(12)
 
           Column {
             visible: root.showSetup
@@ -702,6 +711,14 @@ Panel {
               }
             }
           }
+          }
+        }
+
+        Column {
+          id: footer
+          width: parent.width
+          visible: !store.needsSetup
+          spacing: Style.space(2)
 
           PanelSeparator {
             visible: !store.needsSetup
@@ -832,6 +849,7 @@ Panel {
           : "Remove this rclone remote?"
         cancelText: "Cancel"
         confirmText: "Remove"
+        background: Color.popups.background
         foreground: root.foreground
         fontFamily: root.fontFamily
         focus: opened
