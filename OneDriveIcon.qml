@@ -2,17 +2,16 @@ import QtQuick
 import QtQuick.Shapes
 import qs.Commons
 
-// Filled dual-cloud OneDrive mark (Mac tray / Icons8 iOS glyph):
-// a smaller back cloud with an arch, and a larger front cloud, with a
-// crescent gap between them. Theme-colored fill, no stroke.
+// Official 2025 OneDrive mark: cloud split by an S-wave (hook + top lobe +
+// bottom lobe). Theme-colored fill so the wave stays a transparent gap.
 Item {
   id: root
 
   property real iconSize: Style.font.icon
   property color color: Color.foreground
 
-  readonly property real markWidth: 106
-  readonly property real markHeight: 66
+  readonly property real markWidth: 104
+  readonly property real markHeight: 64
 
   width: iconSize * (markWidth / markHeight)
   height: iconSize
@@ -35,25 +34,33 @@ Item {
       layer.samples: 8
       layer.smooth: true
 
-      // Back cloud (left puffs + arch)
+      // Left hook (start of the S-wave)
       ShapePath {
         fillColor: root.color
         strokeColor: "transparent"
         strokeWidth: 0
-        fillRule: ShapePath.WindingFill
         PathSvg {
-          path: "M1 46 A14 14 0 0 1 12 33.5 A18.5 18.5 0 0 1 29.5 12.5 A21.5 21.5 0 0 1 61.5 2.2 A21.5 21.5 0 0 1 78.8 20 L76.2 22.6 A24.5 24.5 0 0 0 58 16 A26 26 0 0 0 36 32.5 A18 18 0 0 0 22.5 42.5 A16 16 0 0 0 21.2 60.8 L11.5 60.8 A14 14 0 0 1 1 46 Z"
+          path: "M0.5 35.5 C1 26 11 13 21.5 10.5 C15 17 9 27 6.5 36.5 C3.5 38 1 37.5 0.5 35.5 Z"
         }
       }
 
-      // Front cloud
+      // Top / left body
       ShapePath {
         fillColor: root.color
         strokeColor: "transparent"
         strokeWidth: 0
-        fillRule: ShapePath.WindingFill
         PathSvg {
-          path: "M27 51 A14.5 14.5 0 0 1 41.5 38 A19.2 19.2 0 0 1 60.2 23 A18.5 18.5 0 0 1 74.5 30.2 A13 13 0 0 1 90 30 A18.5 18.5 0 0 1 105 53 A13.5 13.5 0 0 1 96.2 66 L38.2 66 A14.5 14.5 0 0 1 27 51 Z"
+          path: "M1.2 45 C2 36 16 12 42 1.5 C56 -0.5 70 4 82.5 13.8 C72 16.5 60 24 46 44 C38 56 33 61 29 63.2 C20 64.5 8 59 2.5 50 C1.5 48 1.2 46.5 1.2 45 Z"
+        }
+      }
+
+      // Bottom / right body
+      ShapePath {
+        fillColor: root.color
+        strokeColor: "transparent"
+        strokeWidth: 0
+        PathSvg {
+          path: "M39 64 C52 44 64 26 78 19.8 C90 16.5 102 26 104 42 C104.5 52 100 60 90 63.2 C82 64.5 70 64 39 64 Z"
         }
       }
     }

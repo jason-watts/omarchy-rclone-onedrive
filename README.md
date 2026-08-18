@@ -8,7 +8,7 @@ This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugi
 
 ## What it does
 
-- Bar icon: Mac-style dual-cloud OneDrive mark, themed to the shell. Bright when the mount is healthy, dim when stopped, urgent when failed, stale, or needs reauth.
+- Bar icon: 2025 OneDrive S-wave cloud, themed to the shell. Bright when the mount is healthy, dim when stopped, urgent when failed, stale, or needs reauth.
 - Panel: state, uptime, restarts, quota, cache, mount path, in-flight transfers, recent VFS-cache files.
 - Open the mount in Files (Nautilus) or a terminal already `cd`'d there.
 - Start / stop / restart the systemd unit. User units use `systemctl --user`. System units go through `pkexec`.
