@@ -908,7 +908,8 @@ Panel {
     property int rowIndex: 0
     readonly property bool selected: store.setupAccount === String(account.id || "")
 
-    hasCursor: root.cursorActive && root.focusSection === "setup" && root.setupIndex === rowIndex
+    hasCursor: root.cursorActive && root.focusSection === "setup" && root.setupIndex === rowIndex && !selected
+    current: selected
     foreground: root.foreground
     implicitHeight: choiceBody.implicitHeight + Style.spacing.rowPaddingX
 
@@ -916,7 +917,6 @@ Panel {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onEntered: root.setSetupCursor(choiceRow.rowIndex)
       onClicked: root.selectSetupAccount(choiceRow.rowIndex)
     }
 
