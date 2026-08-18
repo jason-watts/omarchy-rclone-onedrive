@@ -609,12 +609,13 @@ def cmd_linger(args: argparse.Namespace) -> int:
 
 def cmd_control(args: argparse.Namespace) -> int:
     verb = args.command
-    if not args.unit:
+    unit = str(args.unit or "")
+    if not re.fullmatch(r"rclone-[A-Za-z0-9_.-]+\.service", unit):
         return emit({"ok": False, "action": verb, "error": "No rclone unit found"})
     if getattr(args, "unit_scope", "system") == "user":
-        command = ["systemctl", "--user", verb, args.unit]
+        command = ["systemctl", "--user", verb, unit]
     else:
-        command = ["pkexec", "systemctl", verb, args.unit]
+        command = ["pkexec", "systemctl", verb, unit]
     code, stdout, stderr = run(command, timeout=30.0)
     if code != 0:
         return emit(

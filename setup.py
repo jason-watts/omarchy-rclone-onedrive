@@ -314,6 +314,87 @@ def sanitize_remote(name: str) -> str:
     return cleaned.strip("-_")
 
 
+UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9_-]+\.service$")
+
+
+def public_error(text: str) -> str:
+    raw = str(text or "")
+    if "access_token" in raw or "refresh_token" in raw:
+        return "rclone config failed"
+    return raw[:280]
+
+
+def rclone_config_path() -> Path:
+    binary = rclone_bin()
+    if binary:
+        proc = subprocess.run(
+            [binary, "config", "file"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        for line in (proc.stdout or "").splitlines():
+            candidate = line.strip()
+            if candidate.startswith("/") and candidate.endswith("rclone.conf"):
+                return Path(candidate)
+    return Path.home() / ".config" / "rclone" / "rclone.conf"
+
+
+def upsert_ini_value(text: str, section: str, key: str, value: str) -> str:
+    header = f"[{section}]"
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    found = False
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() == header:
+            found = True
+            out.append(line)
+            i += 1
+            replaced = False
+            while i < len(lines) and not lines[i].lstrip().startswith("["):
+                raw = lines[i]
+                name = raw.split("=", 1)[0].strip()
+                if name == key:
+                    if not replaced:
+                        out.append(f"{key} = {value}\n")
+                        replaced = True
+                else:
+                    out.append(raw)
+                i += 1
+            if not replaced:
+                out.append(f"{key} = {value}\n")
+            continue
+        out.append(line)
+        i += 1
+    if not found:
+        if out and not str(out[-1]).endswith("\n"):
+            out.append("\n")
+        if out and out[-1].strip() != "":
+            out.append("\n")
+        out.append(f"{header}\n")
+        if key != "type":
+            out.append("type = onedrive\n")
+        out.append(f"{key} = {value}\n")
+    return "".join(out)
+
+
+def write_remote_token(name: str, token: str) -> None:
+    remote = sanitize_remote(name)
+    if not remote or not token:
+        raise ValueError("missing remote or token")
+    path = rclone_config_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    updated = upsert_ini_value(current, remote, "token", token)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(updated, encoding="utf-8")
+    tmp.chmod(0o600)
+    tmp.replace(path)
+    path.chmod(0o600)
+
+
 def default_mount(remote: str) -> str:
     name = sanitize_remote(remote) or "onedrive"
     return str(Path.home() / "onedrive" / name)
@@ -367,7 +448,7 @@ def ni(bin_path: str, name: str, extra: list[str]) -> dict:
             return json.loads(raw)
         except json.JSONDecodeError:
             return {"Error": raw[:200], "State": ""}
-    return {"Error": (proc.stderr or raw or "rclone config failed")[:200], "State": ""}
+    return {"Error": public_error(proc.stderr or raw or "rclone config failed"), "State": ""}
 
 
 def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
@@ -395,6 +476,11 @@ def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
         return "onedrive"
     if name == "access_scopes":
         return ACCESS_SCOPES
+    if name == "config_refresh_token":
+        return "false"
+    if name == "config_token":
+        # Token is written to rclone.conf (mode 0600), never to argv.
+        return ""
     if name in ("config_driveid", "drive_id", "config_drive"):
         want = ends["drive_type"]
         for example in examples:
@@ -419,6 +505,7 @@ def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
 
 
 def create_remote(bin_path: str, name: str, account: str, region: str, token: str) -> str:
+    write_remote_token(name, token)
     ends = endpoints(account, region)
     extra = [
         "region",
@@ -439,7 +526,8 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
         if not state:
             return ""
         if option.get("Name") == "config_token":
-            result = token
+            write_remote_token(name, token)
+            result = ""
         else:
             result = pick_result(option, account, ends)
         data = ni(
@@ -451,7 +539,10 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
 
 
 def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
+    remote = sanitize_remote(remote)
     unit = f"rclone-{remote}.service"
+    if not UNIT_NAME_RE.fullmatch(unit):
+        raise ValueError("Invalid unit name")
     unit_path = Path.home() / ".config/systemd/user" / unit
     unit_path.parent.mkdir(parents=True, exist_ok=True)
     binary = rclone_bin()
@@ -477,6 +568,8 @@ WantedBy=default.target
 
 
 def stop_user_unit(unit: str, mount: str) -> None:
+    if not UNIT_NAME_RE.fullmatch(unit or ""):
+        return
     subprocess.run(
         ["systemctl", "--user", "stop", unit],
         capture_output=True,
@@ -493,6 +586,8 @@ def stop_user_unit(unit: str, mount: str) -> None:
 
 
 def enable_user_unit(unit: str) -> str:
+    if not UNIT_NAME_RE.fullmatch(unit or ""):
+        return "Invalid unit name"
     for cmd in (
         ["systemctl", "--user", "daemon-reload"],
         ["systemctl", "--user", "enable", "--now", unit],
@@ -528,22 +623,63 @@ def find_mount(remote: str) -> str:
     return ""
 
 
-def user_unit_path(unit: str) -> Path:
-    return Path.home() / ".config" / "systemd" / "user" / unit
+def user_systemd_root() -> Path:
+    return (Path.home() / ".config" / "systemd" / "user").resolve()
+
+
+def safe_unit_name(unit: str, remote: str) -> str:
+    expected = f"rclone-{sanitize_remote(remote)}.service"
+    raw = (unit or "").strip()
+    if raw == expected and UNIT_NAME_RE.fullmatch(raw):
+        return raw
+    return expected
+
+
+def resolved_user_unit(unit: str) -> Path | None:
+    if not UNIT_NAME_RE.fullmatch(unit or ""):
+        return None
+    root = user_systemd_root()
+    path = (root / unit).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    if path.parent != root:
+        return None
+    return path
+
+
+def resolved_unit_wants(unit: str) -> Path | None:
+    if not UNIT_NAME_RE.fullmatch(unit or ""):
+        return None
+    root = user_systemd_root()
+    wants = (root / "default.target.wants").resolve()
+    path = (wants / unit).resolve()
+    try:
+        path.relative_to(wants)
+    except ValueError:
+        return None
+    return path
+
+
+def user_unit_path(unit: str) -> Path | None:
+    return resolved_user_unit(unit)
 
 
 def disable_user_unit(unit: str) -> None:
+    if not UNIT_NAME_RE.fullmatch(unit or ""):
+        return
     subprocess.run(
         ["systemctl", "--user", "disable", "--now", unit],
         capture_output=True,
         text=True,
         timeout=20,
     )
-    path = user_unit_path(unit)
-    if path.is_file():
+    path = resolved_user_unit(unit)
+    if path is not None and path.is_file():
         path.unlink()
-    wants = Path.home() / ".config" / "systemd" / "user" / "default.target.wants" / unit
-    if wants.is_symlink() or wants.is_file():
+    wants = resolved_unit_wants(unit)
+    if wants is not None and (wants.is_symlink() or wants.is_file()):
         wants.unlink()
     subprocess.run(
         ["systemctl", "--user", "daemon-reload"],
@@ -596,6 +732,18 @@ def still_mounted(path: str) -> bool:
     return check.returncode == 0
 
 
+def is_plugin_mount_dir(path: str, remote: str) -> bool:
+    name = sanitize_remote(remote)
+    if not name or not path:
+        return False
+    try:
+        resolved = Path(path).expanduser().resolve()
+        root = (Path.home() / "onedrive").resolve()
+    except OSError:
+        return False
+    return resolved.parent == root and resolved.name == name
+
+
 def remove_empty_mount(path: str) -> None:
     if not path:
         return
@@ -629,7 +777,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     if not remote:
         return fail("No remote to remove")
     mount = str(Path(args.mount).expanduser()) if args.mount else find_mount(remote)
-    unit = getattr(args, "unit", "") or f"rclone-{remote}.service"
+    unit = safe_unit_name(getattr(args, "unit", ""), remote)
     # Detach FUSE first so systemctl stop does not hang on a busy mount.
     lazy_unmount(mount)
     leftover = find_mount(remote)
@@ -639,7 +787,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     except (subprocess.TimeoutExpired, OSError):
         pass
     try:
-        if user_unit_path(unit).is_file() or unit.startswith("rclone-"):
+        if resolved_user_unit(unit) is not None:
             disable_user_unit(unit)
     except (subprocess.TimeoutExpired, OSError):
         pass
@@ -648,7 +796,8 @@ def _cmd_remove(args: argparse.Namespace) -> int:
         return fail(error, remote=remote, mount=mount, unit=unit)
     leftover = leftover or find_mount(remote)
     for path in (mount, leftover, default_mount(remote)):
-        remove_empty_mount(path)
+        if is_plugin_mount_dir(path, remote):
+            remove_empty_mount(path)
     clear_pending()
     return emit(
         {
@@ -712,23 +861,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         Path(mount).mkdir(parents=True, exist_ok=True)
         unit = f"rclone-{remote}.service"
         stop_user_unit(unit, mount)
+        write_remote_token(remote, token)
         proc = subprocess.run(
-            [
-                binary,
-                "config",
-                "update",
-                remote,
-                "token",
-                token,
-                "config_refresh_token",
-                "false",
-            ],
+            [binary, "config", "update", remote, "config_refresh_token", "false"],
             capture_output=True,
             text=True,
             timeout=20,
         )
         if proc.returncode != 0:
-            return fail((proc.stderr or proc.stdout or "token update failed").strip())
+            return fail("token update failed")
         error = enable_user_unit(unit)
         if error:
             return fail(error, remote=remote, mount=mount, unit=unit)

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "jason.rclone-onedrive",
   "name": "rclone OneDrive",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Jason Watts",
   "license": "MIT",
   "homepage": "https://github.com/jason-watts/omarchy-rclone-onedrive",
