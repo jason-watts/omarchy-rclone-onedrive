@@ -196,7 +196,7 @@ def rclone_installed() -> bool:
     return bool(found or Path(RCLONE_BIN).is_file())
 
 
-def unit_status(unit: str) -> dict:
+def unit_status(unit: str, user: bool = False) -> dict:
     empty = {
         "loaded": False,
         "running": False,
@@ -210,29 +210,29 @@ def unit_status(unit: str) -> dict:
     }
     if not unit:
         return empty
-    code, stdout, stderr = run(
-        [
-            "systemctl",
-            "show",
-            "--timestamp=unix",
-            unit,
-            "-p",
-            "LoadState",
-            "-p",
-            "ActiveState",
-            "-p",
-            "SubState",
-            "-p",
-            "Result",
-            "-p",
-            "NRestarts",
-            "-p",
-            "ExecMainStartTimestamp",
-            "-p",
-            "ActiveEnterTimestamp",
-        ],
-        timeout=2.0,
-    )
+    cmd = ["systemctl"]
+    if user:
+        cmd.append("--user")
+    cmd += [
+        "show",
+        "--timestamp=unix",
+        unit,
+        "-p",
+        "LoadState",
+        "-p",
+        "ActiveState",
+        "-p",
+        "SubState",
+        "-p",
+        "Result",
+        "-p",
+        "NRestarts",
+        "-p",
+        "ExecMainStartTimestamp",
+        "-p",
+        "ActiveEnterTimestamp",
+    ]
+    code, stdout, stderr = run(cmd, timeout=2.0)
     fields = parse_show(stdout)
     loaded = fields.get("LoadState", "") == "loaded"
     active_state = fields.get("ActiveState", "")
@@ -258,6 +258,8 @@ def unit_status(unit: str) -> dict:
 
 
 def mount_present(mount_path: str) -> tuple[bool, str]:
+    if not mount_path:
+        return False, ""
     code, stdout, _stderr = run(
         ["findmnt", "-n", "-o", "SOURCE,FSTYPE", mount_path], timeout=1.5
     )
@@ -268,6 +270,8 @@ def mount_present(mount_path: str) -> tuple[bool, str]:
 
 
 def probe_mount(mount_path: str) -> bool:
+    if not mount_path:
+        return False
     code, _stdout, _stderr = run(
         ["timeout", "2", "stat", "-c", "%F", mount_path], timeout=2.5
     )
@@ -367,13 +371,13 @@ def vfs_cache_rows(vfs_root: str, mount_path: str, limit: int) -> tuple[int, int
     return counter, total_bytes, rows
 
 
-def journal_hint(unit: str) -> tuple[str, bool]:
+def journal_hint(unit: str, user: bool = False) -> tuple[str, bool]:
     if not unit:
         return "", False
-    code, stdout, _stderr = run(
-        ["journalctl", "-u", unit, "-n", "80", "--no-pager", "-o", "cat"],
-        timeout=2.0,
-    )
+    cmd = ["journalctl", "-u", unit, "-n", "80", "--no-pager", "-o", "cat"]
+    if user:
+        cmd.insert(1, "--user")
+    code, stdout, _stderr = run(cmd, timeout=2.0)
     if code != 0:
         return "", False
     last = ""
@@ -396,13 +400,13 @@ def derive_state(
     failed = (not unit["running"] and unit["result"] == "failed") or unit[
         "activeState"
     ] == "failed"
+    if mounted and probe_ok:
+        return "healthy"
     if failed:
         return "unauthenticated" if auth_hint else "failed"
     if not unit["running"]:
         return "unauthenticated" if auth_hint else "stopped"
-    if not mounted or not probe_ok:
-        return "unauthenticated" if auth_hint else "stale"
-    return "healthy"
+    return "unauthenticated" if auth_hint else "stale"
 
 
 def emit(payload: dict) -> int:
@@ -413,14 +417,15 @@ def emit(payload: dict) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     now_ms = int(time.time() * 1000)
-    unit = unit_status(args.unit)
+    user_unit = getattr(args, "unit_scope", "system") == "user"
+    unit = unit_status(args.unit, user=user_unit)
     mounted, mount_source = mount_present(args.mount)
     probe_ok = probe_mount(args.mount) if mounted or unit["running"] else False
     rc_ok, stats = rc_json(args.rc, "core/stats")
     vfs_ok, vfs_stats = rc_json(args.rc, "vfs/stats") if rc_ok else (False, {})
     transferring = transferring_rows(stats) if rc_ok else []
     cache_files, cache_bytes, files = vfs_cache_rows(args.vfs, args.mount, 15)
-    last_journal, auth_hint = journal_hint(args.unit)
+    last_journal, auth_hint = journal_hint(args.unit, user=user_unit)
     disk_cache = vfs_stats.get("diskCache") if isinstance(vfs_stats, dict) else {}
     if not isinstance(disk_cache, dict):
         disk_cache = {}
