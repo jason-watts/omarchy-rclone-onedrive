@@ -69,11 +69,12 @@ Panel {
       return
     }
     if (displayFiles.length === 0) {
-      focusSection = "header"
+      if (focusSection !== "header" && focusSection !== "linger" && focusSection !== "remove")
+        focusSection = "header"
       fileIndex = 0
       return
     }
-    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "linger")
+    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "linger" && focusSection !== "remove")
       focusSection = "files"
     if (fileIndex >= displayFiles.length) fileIndex = Math.max(0, displayFiles.length - 1)
     if (fileIndex < 0) fileIndex = 0
@@ -120,6 +121,18 @@ Panel {
         } else {
           setHeaderCursor()
         }
+        return
+      }
+      if (dy > 0) {
+        focusSection = "remove"
+        scrollCursorIntoView()
+      }
+      return
+    }
+    if (focusSection === "remove") {
+      if (dy < 0) {
+        focusSection = "linger"
+        scrollCursorIntoView()
       }
       return
     }
@@ -203,6 +216,8 @@ Panel {
       root.runSetupAction()
     } else if (focusSection === "linger") {
       store.toggleLinger()
+    } else if (focusSection === "remove") {
+      root.askRemoveRemote()
     } else if (focusSection === "files") store.openFile(selectedFile())
   }
 
@@ -237,6 +252,10 @@ Panel {
   function scrollCursorIntoView() {
     if (focusSection === "linger") {
       scrollItemIntoView(lingerRow)
+      return
+    }
+    if (focusSection === "remove") {
+      scrollItemIntoView(removeRow)
       return
     }
     if (focusSection === "files" && fileColumn && fileIndex >= 0 && fileIndex < fileColumn.children.length)
@@ -288,6 +307,24 @@ Panel {
     if (keyCatcher) keyCatcher.forceActiveFocus()
   }
 
+  function askRemoveRemote() {
+    if (store.busy || store.remote === "") return
+    removeConfirm.selectedIndex = 0
+    removeConfirm.opened = true
+    Qt.callLater(function() { if (removeConfirm) removeConfirm.forceActiveFocus() })
+  }
+
+  function cancelRemoveRemote() {
+    removeConfirm.opened = false
+    if (keyCatcher) keyCatcher.forceActiveFocus()
+  }
+
+  function confirmRemoveRemote() {
+    removeConfirm.opened = false
+    if (keyCatcher) keyCatcher.forceActiveFocus()
+    store.removeRemote()
+  }
+
   function setSetupCursor(index) {
     cursorActive = true
     focusSection = "setup"
@@ -304,7 +341,11 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  onOpenedChanged: if (opened) {
+  onOpenedChanged: {
+    if (!opened) {
+      removeConfirm.opened = false
+      return
+    }
     cursorActive = false
     if (panelFlick) panelFlick.contentY = 0
     refreshNow()
@@ -335,6 +376,7 @@ Panel {
     function files(): string { store.openInFiles(); return "ok" }
     function terminal(): string { root.openTerminal(); return "ok" }
     function setup(): string { root.runSetupAction(); return "ok" }
+    function remove(): string { root.askRemoveRemote(); return "confirm" }
   }
 
   BarIconButton {
@@ -378,7 +420,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: setupNameField.activeFocus
+      blocked: setupNameField.activeFocus || removeConfirm.opened
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
@@ -726,7 +768,78 @@ Panel {
               }
             }
           }
+
+          CursorSurface {
+            id: removeRow
+            visible: !store.needsSetup && store.remote !== ""
+            width: parent.width
+            hasCursor: root.cursorActive && root.focusSection === "remove"
+            foreground: root.urgent
+            implicitHeight: removeBody.implicitHeight + Style.space(6)
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: {
+                root.cursorActive = true
+                root.focusSection = "remove"
+              }
+              onClicked: root.askRemoveRemote()
+            }
+
+            RowLayout {
+              id: removeBody
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              spacing: Style.space(8)
+
+              ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(1)
+                Text {
+                  Layout.fillWidth: true
+                  text: "Remove remote"
+                  color: root.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
+                Text {
+                  Layout.fillWidth: true
+                  text: "Deletes " + store.remote + " from rclone"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                }
+              }
+            }
+          }
         }
+      }
+
+      ConfirmDialog {
+        id: removeConfirm
+        anchors.fill: parent
+        z: 20
+        opened: false
+        message: store.remote !== ""
+          ? "Remove rclone remote “" + store.remote + "”? The mount stops and the local login is deleted. Files stay in OneDrive."
+          : "Remove this rclone remote?"
+        cancelText: "Cancel"
+        confirmText: "Remove"
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        focus: opened
+        Keys.onPressed: function(event) {
+          if (removeConfirm.handleKey(event)) event.accepted = true
+        }
+        onCanceled: root.cancelRemoveRemote()
+        onConfirmed: root.confirmRemoveRemote()
       }
     }
   }

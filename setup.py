@@ -287,6 +287,104 @@ def existing_remotes(bin_path: str) -> set[str]:
     return names
 
 
+def find_mount(remote: str) -> str:
+    proc = subprocess.run(
+        ["findmnt", "-t", "fuse.rclone", "-n", "-o", "SOURCE,TARGET"],
+        capture_output=True,
+        text=True,
+        timeout=3,
+    )
+    needle = remote.rstrip(":") + ":"
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        if parts[0].rstrip(":") == remote or parts[0] == needle:
+            return parts[1]
+    return ""
+
+
+def user_unit_path(unit: str) -> Path:
+    return Path.home() / ".config" / "systemd" / "user" / unit
+
+
+def disable_user_unit(unit: str) -> None:
+    subprocess.run(
+        ["systemctl", "--user", "disable", "--now", unit],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    path = user_unit_path(unit)
+    if path.is_file():
+        path.unlink()
+    wants = Path.home() / ".config" / "systemd" / "user" / "default.target.wants" / unit
+    if wants.is_symlink() or wants.is_file():
+        wants.unlink()
+    subprocess.run(
+        ["systemctl", "--user", "daemon-reload"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+
+def delete_remote(bin_path: str, name: str) -> str:
+    if name not in existing_remotes(bin_path):
+        return ""
+    proc = subprocess.run(
+        [bin_path, "config", "delete", name],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if proc.returncode != 0:
+        return (proc.stderr or proc.stdout or "rclone config delete failed").strip()[:280]
+    return ""
+
+
+def cmd_remove(args: argparse.Namespace) -> int:
+    binary = rclone_bin()
+    if not binary:
+        return fail("rclone is not installed")
+    remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
+    if not remote:
+        return fail("No remote to remove")
+    mount = str(Path(args.mount).expanduser()) if args.mount else find_mount(remote)
+    unit = args.unit or f"rclone-{remote}.service"
+    stop_user_unit(unit, mount)
+    if mount and mount != find_mount(remote):
+        subprocess.run(
+            ["/usr/bin/fusermount3", "-uz", mount],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    leftover = find_mount(remote)
+    if leftover:
+        subprocess.run(
+            ["/usr/bin/fusermount3", "-uz", leftover],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    if user_unit_path(unit).is_file() or unit.startswith("rclone-"):
+        disable_user_unit(unit)
+    error = delete_remote(binary, remote)
+    if error:
+        return fail(error, remote=remote, mount=mount, unit=unit)
+    return emit(
+        {
+            "ok": True,
+            "action": "remove",
+            "remote": remote,
+            "mount": mount,
+            "unit": unit,
+            "error": "",
+        }
+    )
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     binary = rclone_bin()
     if not binary:
@@ -386,7 +484,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="setup",
-        choices=["setup", "reconnect", "install-rclone"],
+        choices=["setup", "reconnect", "install-rclone", "remove"],
     )
     parser.add_argument("--account", default="personal", choices=["personal", "business", "sharepoint"])
     parser.add_argument("--region", default="global")
@@ -401,6 +499,8 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.command == "install-rclone":
         return cmd_install_rclone()
+    if args.command == "remove":
+        return cmd_remove(args)
     if args.command == "reconnect":
         args.reconnect = True
     return cmd_setup(args)

@@ -283,6 +283,25 @@ Item {
     setupProcess.running = true
   }
 
+  function removeRemote() {
+    if (setupProcess.running || setupHelperPath === "") return
+    var name = String(remote || setupRemote || "")
+    if (name === "") {
+      lastError = "No remote to remove"
+      actionStatus = lastError
+      return
+    }
+    _setupOutput = ""
+    _setupError = ""
+    actionStatus = "Removing " + name + "…"
+    setupProcess.command = [
+      "/usr/bin/python3", setupHelperPath, "remove",
+      "--remote", name,
+      "--mount", String(mountPath || "")
+    ]
+    setupProcess.running = true
+  }
+
   function maybeNotify(prev, next) {
     if (prev === "" || prev === next) return
     if (_suppressNotify) return
@@ -417,6 +436,18 @@ Item {
       if (exitCode !== 0 || parsed.ok === false) {
         root.lastError = root.elide(parsed.error || stderr || stdout || "Setup failed")
         root.actionStatus = root.lastError
+      } else if (parsed.action === "remove") {
+        root.lastError = ""
+        root.actionStatus = "Remote removed"
+        root.remote = ""
+        root.mountPath = ""
+        root.unit = ""
+        root.running = false
+        root.mounted = false
+        root.needsSetup = true
+        root.needsAuth = false
+        root.needsMount = false
+        root.setupRemote = ""
       } else {
         root.lastError = ""
         root.actionStatus = parsed.action === "reconnect" ? "Signed in" : "OneDrive is ready"
