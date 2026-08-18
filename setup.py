@@ -20,12 +20,18 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 RCLONE_BIN = "/home/jason/.local/bin/rclone"
 URL_RE = re.compile(r"https?://[^\s\"'<>]+")
 TOKEN_RE = re.compile(r"\{[^{}]*\"access_token\"[^{}]*\}", re.S)
+ACCESS_SCOPES = (
+    "Files.Read Files.ReadWrite Files.Read.All Files.ReadWrite.All "
+    "Sites.Read.All offline_access openid email profile User.Read"
+)
+JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 
 LOGIN_HOST = {
     "global": "login.microsoftonline.com",
@@ -109,8 +115,9 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
     env = os.environ.copy()
     env["RCLONE_ONEDRIVE_AUTH_URL"] = auth_url
     env["RCLONE_ONEDRIVE_TOKEN_URL"] = token_url
+    env["RCLONE_ONEDRIVE_ACCESS_SCOPES"] = ACCESS_SCOPES
     proc = subprocess.Popen(
-        [bin_path, "authorize", "onedrive"],
+        [bin_path, "authorize", "onedrive", "--onedrive-access-scopes", ACCESS_SCOPES],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -160,20 +167,33 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
         tail = " ".join(err_lines[-3:]).strip()
         if proc.returncode != 0:
             return "", tail or "Microsoft sign-in was cancelled or failed"
-        blob = stdout or ""
-        match = TOKEN_RE.search(blob)
-        if match:
-            return match.group(0), ""
-        text = blob.strip()
-        if text.startswith("{") and "access_token" in text:
-            return text, ""
+        blob = extract_token_blob(stdout or "")
+        if blob:
+            return blob, ""
         return "", tail or "rclone authorize did not return a token"
     finally:
         cleanup()
 
 
+def extract_token_blob(text: str) -> str:
+    match = TOKEN_RE.search(text or "")
+    if match:
+        return match.group(0)
+    start = (text or "").find("{")
+    end = (text or "").rfind("}")
+    if start >= 0 and end > start and "access_token" in text[start : end + 1]:
+        candidate = text[start : end + 1]
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            return ""
+        if isinstance(data, dict) and data.get("access_token"):
+            return candidate
+    return ""
+
+
 def jwt_claims(token: str) -> dict:
-    parts = token.split(".")
+    parts = str(token or "").split(".")
     if len(parts) < 2:
         return {}
     payload = parts[1] + "=" * (-len(parts[1]) % 4)
@@ -184,43 +204,103 @@ def jwt_claims(token: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def email_from_claims(claims: dict) -> str:
-    for key in ("preferred_username", "upn", "unique_name", "email"):
-        value = claims.get(key)
-        if isinstance(value, str) and "@" in value:
-            return value.strip()
+def normalize_email(value: str) -> str:
+    text = (value or "").strip()
+    if "#" in text and "@" in text.split("#")[-1]:
+        text = text.split("#")[-1].strip()
+    if text.startswith("smtp:") and "@" in text:
+        text = text[5:]
+    if "@" not in text or " " in text:
+        return ""
+    return text
+
+
+def email_from_value(value: object) -> str:
+    if isinstance(value, str):
+        return normalize_email(value)
+    if isinstance(value, list):
+        for item in value:
+            found = email_from_value(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, dict):
+        for key in (
+            "preferred_username",
+            "upn",
+            "unique_name",
+            "email",
+            "mail",
+            "userPrincipalName",
+            "user_principal_name",
+        ):
+            found = email_from_value(value.get(key))
+            if found:
+                return found
+        for key in ("emails", "otherMails", "proxyAddresses", "verified_primary_email"):
+            found = email_from_value(value.get(key))
+            if found:
+                return found
+        owner = value.get("owner")
+        if isinstance(owner, dict):
+            found = email_from_value(owner.get("user") or owner)
+            if found:
+                return found
     return ""
 
 
+def email_from_jwts(text: str) -> str:
+    for match in JWT_RE.findall(text or ""):
+        found = email_from_value(jwt_claims(match))
+        if found:
+            return found
+    return ""
+
+
+def graph_json(access: str, url: str) -> dict:
+    req = Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {access}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def email_from_token_blob(token_blob: str) -> str:
+    found = email_from_jwts(token_blob)
+    if found:
+        return found
     try:
         data = json.loads(token_blob)
     except json.JSONDecodeError:
         return ""
     if not isinstance(data, dict):
         return ""
+    found = email_from_value(data)
+    if found:
+        return found
     for key in ("id_token", "access_token"):
-        email = email_from_claims(jwt_claims(str(data.get(key) or "")))
-        if email:
-            return email
+        found = email_from_value(jwt_claims(str(data.get(key) or "")))
+        if found:
+            return found
     access = str(data.get("access_token") or "")
     if not access:
         return ""
-    try:
-        req = Request(
-            "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,mail",
-            headers={"Authorization": f"Bearer {access}"},
-        )
-        with urlopen(req, timeout=8) as resp:
-            me = json.loads(resp.read().decode("utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return ""
-    if not isinstance(me, dict):
-        return ""
-    for key in ("userPrincipalName", "mail"):
-        value = me.get(key)
-        if isinstance(value, str) and "@" in value:
-            return value.strip()
+    for url in (
+        "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,mail,otherMails,proxyAddresses",
+        "https://graph.microsoft.com/oidc/userinfo",
+        "https://graph.microsoft.com/v1.0/me/drive?$select=owner,webUrl",
+    ):
+        found = email_from_value(graph_json(access, url))
+        if found:
+            return found
     return ""
 
 
@@ -295,6 +375,8 @@ def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
         return "false"
     if name == "config_type":
         return "onedrive"
+    if name == "access_scopes":
+        return ACCESS_SCOPES
     if name in ("config_driveid", "drive_id", "config_drive"):
         want = ends["drive_type"]
         for example in examples:
@@ -327,6 +409,8 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
         ends["auth_url"],
         "token_url",
         ends["token_url"],
+        "access_scopes",
+        ACCESS_SCOPES,
     ]
     data = ni(bin_path, name, extra)
     for _ in range(24):
@@ -605,7 +689,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         )
     remote = remote_from_email(email_from_token_blob(token), remotes)
     if not remote:
-        return fail("Could not read the signed-in account domain")
+        return fail("Microsoft did not return an email for this account")
     emit_line({"ok": True, "action": "setup", "phase": "mounting", "remote": remote})
     return finish_mount(binary, remote, account, region, token, mount, args.rc)
 
