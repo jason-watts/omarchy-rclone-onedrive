@@ -13,7 +13,7 @@ This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugi
 - Open the mount from the hero toolbar: Files (Nautilus) or a terminal already `cd`'d there.
 - Start / stop / restart the systemd unit. User units use `systemctl --user`. System units go through `pkexec`.
 - Desktop notification when the mount drops or comes back (not for a user-initiated stop).
-- First-time setup: pick Personal / Work or school / SharePoint, optionally name the rclone remote, then sign in at the matching Microsoft endpoint (`/consumers` vs `/organizations`). If you leave the name blank, it uses the domain of the signed-in account (`jason@philotic.net` → `philotic`). The plugin creates that remote and starts a user systemd mount.
+- First-time setup: pick Personal / Work or school / SharePoint, then sign in. After Microsoft login the remote name is filled with the account domain (`jason@philotic.net` → `philotic-net`). You can type over it, then create the mount.
 
 The helper never walks the live FUSE mount. Recent files come from `~/.cache/rclone/vfs/<remote>` only. Quota (`rclone about`) runs when you open the panel and on a slow timer, not on every bar poll.
 

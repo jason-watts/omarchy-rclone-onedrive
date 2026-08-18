@@ -34,6 +34,8 @@ Item {
   property bool needsAuth: false
   property string setupAccount: "personal"
   property string setupRemote: ""
+  property bool setupPending: false
+  property string setupDomain: ""
   property bool linger: false
   property string unitScope: "user"
   property bool refreshing: false
@@ -453,10 +455,21 @@ Item {
         root.needsAuth = false
         root.needsMount = false
         root.setupRemote = ""
+        root.setupPending = false
+        root.setupDomain = ""
         root.state = "stopped"
         root.statusText = "Set up rclone"
+      } else if (parsed.action === "authorized") {
+        root.lastError = ""
+        root.setupPending = true
+        root.setupDomain = String(parsed.domain || "")
+        if (parsed.suggestedRemote) root.setupRemote = String(parsed.suggestedRemote)
+        root.actionStatus = root.setupRemote !== ""
+          ? "Signed in. Remote name is " + root.setupRemote
+          : "Signed in. Name this remote, then create the mount"
       } else {
         root.lastError = ""
+        root.setupPending = false
         root.actionStatus = parsed.action === "reconnect" ? "Signed in" : "OneDrive is ready"
         if (parsed.remote) root.remote = String(parsed.remote)
         if (parsed.mount) root.mountPath = String(parsed.mount)

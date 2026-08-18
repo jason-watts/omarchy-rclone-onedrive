@@ -48,7 +48,7 @@ Then click the icon again.
 4. The panel says **Waiting for the browser…**, then switches to the
    status view.
 
-Keys if you prefer the keyboard: `j`/`k` move, optionally type a remote name, `Enter` or `L` starts sign-in, `Esc` closes. Leave the name blank to use the signed-in account’s domain.
+Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `Esc` closes. After sign-in the remote name is filled from the account domain (`philotic.net` → `philotic-net`); you can type over it, then create the mount.
 
 ## 3. Check that it worked
 

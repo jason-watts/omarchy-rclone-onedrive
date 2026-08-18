@@ -56,7 +56,9 @@ Panel {
   ]
   property int setupIndex: 0
   readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
-  readonly property string setupRemoteHint: "signed-in domain"
+  readonly property string setupRemoteHint: store.setupPending
+    ? (store.setupRemote || "philotic-net")
+    : "filled after sign-in"
   readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)
     + Math.min(middle.implicitHeight, Style.space(340))
     + (footer.visible ? Style.space(12) + footer.implicitHeight : 0)
@@ -272,7 +274,7 @@ Panel {
   }
 
   function sanitizedSetupRemote() {
-    return String(store.setupRemote || "").replace(/[^A-Za-z0-9_-]/g, "")
+    return String(store.setupRemote || "").toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9_-]/g, "")
   }
 
   function runSetupAction() {
@@ -287,6 +289,14 @@ Panel {
     }
     if (root.setupAsksName) {
       store.setupRemote = sanitizedSetupRemote()
+    }
+    if (store.setupPending) {
+      if (sanitizedSetupRemote() === "") {
+        store.lastError = "Give this remote a name"
+        store.actionStatus = ""
+        focusSetupName()
+        return
+      }
     }
     store.runSetup("setup")
   }
@@ -367,6 +377,9 @@ Panel {
         root.focusSection = "setup"
         if (panelFlick) panelFlick.contentY = 0
       }
+    }
+    function onSetupPendingChanged() {
+      if (store.setupPending) root.focusSetupName()
     }
   }
 
@@ -605,7 +618,9 @@ Panel {
 
               Text {
                 width: parent.width
-                text: "Optional. Blank uses the domain of the Microsoft account you sign into (philotic.net → philotic)."
+                text: store.setupPending
+                  ? "Filled from the signed-in domain. Edit it if you want."
+                  : "After sign-in this becomes your account domain (philotic.net → philotic-net)."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -995,7 +1010,9 @@ Panel {
           Layout.fillWidth: true
           text: !store.rcloneInstalled
             ? "Install rclone"
-            : (store.needsAuth && !store.needsSetup ? "Sign in again" : "Sign in with Microsoft")
+            : (store.needsAuth && !store.needsSetup
+              ? "Sign in again"
+              : (store.setupPending ? "Create mount" : "Sign in with Microsoft"))
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -1005,7 +1022,9 @@ Panel {
           Layout.fillWidth: true
           text: store.busy
             ? "Waiting for the browser…"
-            : "Opens the correct Microsoft login, then starts the mount"
+            : (store.setupPending
+              ? "Creates rclone remote " + (store.setupRemote || "…") + " and mounts it"
+              : "Opens the Microsoft login, then fills the remote name")
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
