@@ -74,6 +74,7 @@ Item {
   property string _prevState: ""
   property bool _suppressNotify: false
   property bool _setupCancelled: false
+  property string _setupRestart: ""
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -282,8 +283,8 @@ Item {
   function runSetup(kind) {
     if (setupHelperPath === "") return
     if (kind === "authorize" && setupProcess.running) {
+      _setupRestart = "authorize"
       cancelSetup()
-      Qt.callLater(function() { root.runSetup("authorize") })
       return
     }
     if (setupProcess.running) return
@@ -460,6 +461,11 @@ Item {
     onExited: function(exitCode) {
       if (root._setupCancelled) {
         root._setupCancelled = false
+        if (root._setupRestart !== "") {
+          var restart = root._setupRestart
+          root._setupRestart = ""
+          Qt.callLater(function() { root.runSetup(restart) })
+        }
         return
       }
       var stdout = String(setupStdout.text || root._setupOutput || "")

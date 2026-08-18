@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -82,17 +83,45 @@ def open_url(url: str) -> None:
     )
 
 
+def kill_stale_auth_server() -> None:
+    subprocess.run(
+        ["fuser", "-k", "53682/tcp"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=3,
+    )
+    subprocess.run(
+        ["pkill", "-f", r"rclone authorize onedrive"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=3,
+    )
+
+
 def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
+    kill_stale_auth_server()
+    time.sleep(0.2)
     env = os.environ.copy()
     env["RCLONE_ONEDRIVE_AUTH_URL"] = auth_url
     env["RCLONE_ONEDRIVE_TOKEN_URL"] = token_url
     proc = subprocess.Popen(
-        [bin_path, "authorize", "onedrive", "--auth-no-open-browser"],
+        [bin_path, "authorize", "onedrive"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        start_new_session=True,
     )
+
+    def cleanup(*_args: object) -> None:
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except OSError:
+                proc.terminate()
+
+    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
     opened = {"url": ""}
     err_lines: list[str] = []
 
@@ -104,36 +133,38 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
             if not match:
                 continue
             candidate = match.group(0).rstrip(").,/")
-            # rclone also prints the redirect origin in quotes; only the
-            # /auth?state= link starts the Microsoft login.
-            if "/auth" not in candidate:
+            if "/auth" not in candidate and "login.microsoftonline" not in candidate:
+                continue
+            if "localhost" in candidate and "/auth" not in candidate:
                 continue
             if not opened["url"]:
                 opened["url"] = candidate
-                open_url(opened["url"])
 
     err_thread = threading.Thread(target=pump_err, daemon=True)
     err_thread.start()
     deadline = time.time() + 300
-    while proc.poll() is None and time.time() < deadline:
-        time.sleep(0.2)
-    if proc.poll() is None:
-        proc.kill()
+    try:
+        while proc.poll() is None and time.time() < deadline:
+            time.sleep(0.2)
+        if proc.poll() is None:
+            cleanup()
+            err_thread.join(timeout=1)
+            return "", "Microsoft sign-in timed out"
+        stdout = proc.stdout.read() if proc.stdout else ""
         err_thread.join(timeout=1)
-        return "", "Microsoft sign-in timed out"
-    stdout = proc.stdout.read() if proc.stdout else ""
-    err_thread.join(timeout=1)
-    tail = " ".join(err_lines[-3:]).strip()
-    if proc.returncode != 0:
-        return "", tail or "Microsoft sign-in was cancelled or failed"
-    blob = stdout or ""
-    match = TOKEN_RE.search(blob)
-    if match:
-        return match.group(0), ""
-    text = blob.strip()
-    if text.startswith("{") and "access_token" in text:
-        return text, ""
-    return "", tail or "rclone authorize did not return a token"
+        tail = " ".join(err_lines[-3:]).strip()
+        if proc.returncode != 0:
+            return "", tail or "Microsoft sign-in was cancelled or failed"
+        blob = stdout or ""
+        match = TOKEN_RE.search(blob)
+        if match:
+            return match.group(0), ""
+        text = blob.strip()
+        if text.startswith("{") and "access_token" in text:
+            return text, ""
+        return "", tail or "rclone authorize did not return a token"
+    finally:
+        cleanup()
 
 
 def jwt_claims(token: str) -> dict:
