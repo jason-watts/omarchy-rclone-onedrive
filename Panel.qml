@@ -71,15 +71,28 @@ Panel {
     ensureCursor()
     if (dy === 0) return
     if (focusSection === "header") {
-      if (dy > 0) focusSection = root.showSetup ? "setup" : (store.unitScope === "user" ? "linger" : "openFiles")
+      if (dy > 0) {
+        if (root.showSetup) focusSection = "setup"
+        else if (store.mountPath !== "") focusSection = "openFiles"
+        else {
+          focusSection = "linger"
+          scrollCursorIntoView()
+        }
+      }
       return
     }
     if (focusSection === "linger") {
       if (dy < 0) {
-        setHeaderCursor()
-        return
+        if (displayFiles.length > 0) {
+          focusSection = "files"
+          fileIndex = displayFiles.length - 1
+          scrollCursorIntoView()
+        } else if (store.mountPath !== "") {
+          focusSection = "openTerm"
+        } else {
+          setHeaderCursor()
+        }
       }
-      if (dy > 0) focusSection = "openFiles"
       return
     }
     if (focusSection === "setup") {
@@ -104,8 +117,7 @@ Panel {
     }
     if (focusSection === "openFiles") {
       if (dy < 0) {
-        if (store.unitScope === "user") focusSection = "linger"
-        else setHeaderCursor()
+        setHeaderCursor()
         return
       }
       if (dy > 0) focusSection = "openTerm"
@@ -120,12 +132,22 @@ Panel {
         focusSection = "files"
         fileIndex = 0
         scrollCursorIntoView()
+        return
+      }
+      if (dy > 0) {
+        focusSection = "linger"
+        scrollCursorIntoView()
       }
       return
     }
     if (focusSection === "files") {
       if (dy < 0 && fileIndex === 0) {
         focusSection = "openTerm"
+        return
+      }
+      if (dy > 0 && fileIndex === displayFiles.length - 1) {
+        focusSection = "linger"
+        scrollCursorIntoView()
         return
       }
       fileIndex = Math.max(0, Math.min(displayFiles.length - 1, fileIndex + dy))
@@ -199,6 +221,10 @@ Panel {
   }
 
   function scrollCursorIntoView() {
+    if (focusSection === "linger") {
+      scrollItemIntoView(lingerRow)
+      return
+    }
     if (focusSection === "files" && fileColumn && fileIndex >= 0 && fileIndex < fileColumn.children.length)
       scrollItemIntoView(fileColumn.children[fileIndex])
   }
@@ -439,24 +465,6 @@ Panel {
             InfoPair { label: "Mount"; value: store.mountPath }
           }
 
-          Toggle {
-            visible: !store.needsSetup
-            width: parent.width
-            label: "Mount at boot"
-            description: store.lingerActive ? "User services start before login" : "Mounts when you log in"
-            checked: store.lingerActive === true
-            hasCursor: root.cursorActive && root.focusSection === "linger"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onHovered: function(on) {
-              if (on) {
-                root.cursorActive = true
-                root.focusSection = "linger"
-              }
-            }
-            onClicked: store.toggleLinger()
-          }
-
           Text {
             visible: !store.needsSetup && store.excludeNote !== ""
             width: parent.width
@@ -546,6 +554,72 @@ Panel {
                   file: modelData
                   rowIndex: index
                 }
+              }
+            }
+          }
+
+          PanelSeparator {
+            visible: !store.needsSetup
+            foreground: root.foreground
+          }
+
+          CursorSurface {
+            id: lingerRow
+            visible: !store.needsSetup
+            width: parent.width
+            hasCursor: root.cursorActive && root.focusSection === "linger"
+            foreground: root.foreground
+            implicitHeight: lingerBody.implicitHeight + Style.space(6)
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: {
+                root.cursorActive = true
+                root.focusSection = "linger"
+              }
+              onClicked: store.toggleLinger()
+            }
+
+            RowLayout {
+              id: lingerBody
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              spacing: Style.space(8)
+
+              ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Style.space(1)
+                Text {
+                  Layout.fillWidth: true
+                  text: "Mount at boot"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  elide: Text.ElideRight
+                }
+                Text {
+                  Layout.fillWidth: true
+                  text: store.lingerActive ? "Starts before login" : "Starts when you log in"
+                  color: root.dim
+                  opacity: 0.8
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                }
+              }
+
+              ToggleSwitch {
+                checked: store.lingerActive === true
+                interactive: false
+                cursorRing: false
+                trackHeight: 16
+                foreground: root.foreground
+                Layout.alignment: Qt.AlignVCenter
               }
             }
           }

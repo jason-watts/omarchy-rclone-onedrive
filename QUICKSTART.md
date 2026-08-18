@@ -66,7 +66,7 @@ In the panel:
 - Mount is `/home/jason/OneDrive`
 - **Open in Files** / **Open in Terminal** work
 - `p` or the toggle stops and starts the mount
-- **Mount at boot** (or `b`) turns on `loginctl linger` so the user unit starts before login
+- At the bottom, **Mount at boot** (or `b`) turns on `loginctl linger` so the user unit starts before login
 
 If a terminal was already `cd`’d into `~/OneDrive` before a remount:
 
