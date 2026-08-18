@@ -24,7 +24,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-RCLONE_BIN = "/home/jason/.local/bin/rclone"
 URL_RE = re.compile(r"https?://[^\s\"'<>]+")
 TOKEN_RE = re.compile(r"\{[^{}]*\"access_token\"[^{}]*\}", re.S)
 ACCESS_SCOPES = (
@@ -62,8 +61,13 @@ def rclone_bin() -> str:
     found = shutil.which("rclone")
     if found:
         return found
-    if Path(RCLONE_BIN).is_file():
-        return RCLONE_BIN
+    for candidate in (
+        Path.home() / ".local" / "bin" / "rclone",
+        Path("/usr/bin/rclone"),
+        Path("/usr/local/bin/rclone"),
+    ):
+        if candidate.is_file():
+            return str(candidate)
     return ""
 
 

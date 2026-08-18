@@ -20,7 +20,6 @@ import time
 from pathlib import Path
 
 DEFAULT_RC = "http://127.0.0.1:5572"
-RCLONE_BIN = "/home/jason/.local/bin/rclone"
 
 AUTH_RE = re.compile(
     r"401|unauthoriz|unauthenticat|invalid_grant|token expired|"
@@ -48,12 +47,21 @@ def run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
     return completed.returncode, completed.stdout, completed.stderr
 
 
+def rclone_candidates() -> list[Path]:
+    return [
+        Path.home() / ".local" / "bin" / "rclone",
+        Path("/usr/bin/rclone"),
+        Path("/usr/local/bin/rclone"),
+    ]
+
+
 def rclone_bin() -> str:
     found = shutil.which("rclone")
     if found:
         return found
-    if Path(RCLONE_BIN).is_file():
-        return RCLONE_BIN
+    for candidate in rclone_candidates():
+        if candidate.is_file():
+            return str(candidate)
     return "rclone"
 
 
@@ -219,8 +227,9 @@ def set_linger(enabled: bool) -> tuple[bool, str]:
 
 
 def rclone_installed() -> bool:
-    found = shutil.which("rclone")
-    return bool(found or Path(RCLONE_BIN).is_file())
+    if shutil.which("rclone"):
+        return True
+    return any(candidate.is_file() for candidate in rclone_candidates())
 
 
 def unit_status(unit: str, user: bool = False) -> dict:
