@@ -454,7 +454,7 @@ Panel {
                     onClicked: root.openTerminal()
                   }
 
-                  ToggleSwitch {
+                  PillSwitch {
                     id: powerSwitch
                     visible: root.canToggleMount
                     checked: store.active
@@ -681,10 +681,9 @@ Panel {
                 }
               }
 
-              ToggleSwitch {
+              PillSwitch {
                 checked: store.lingerActive === true
                 interactive: false
-                cursorRing: false
                 trackHeight: 16
                 foreground: root.foreground
                 Layout.alignment: Qt.AlignVCenter
@@ -773,6 +772,61 @@ Panel {
     running: root.opened
     repeat: true
     onTriggered: root.nowMs = Date.now()
+  }
+
+  component PillSwitch: Item {
+    id: pill
+    property bool checked: false
+    property bool busy: false
+    property bool interactive: true
+    property bool hasCursor: false
+    property int trackHeight: 20
+    property color foreground: root.foreground
+    property color accent: Color.accent
+    signal toggled()
+    signal hovered(bool isHovered)
+
+    readonly property alias containsMouse: pillMouse.containsMouse
+    readonly property int trackWidth: Math.round(trackHeight * 1.8)
+    readonly property int knobSize: Math.max(10, Math.round(trackHeight * 0.7))
+    readonly property int knobInset: Math.max(2, Math.round((trackHeight - knobSize) / 2))
+
+    implicitWidth: trackWidth
+    implicitHeight: trackHeight
+
+    Rectangle {
+      anchors.fill: parent
+      radius: height / 2
+      color: pill.checked ? pill.accent : Qt.darker(pill.foreground, 2.2)
+      border.width: 1
+      border.color: pill.hasCursor || pillMouse.containsMouse
+        ? pill.foreground
+        : (pill.checked ? pill.accent : Qt.darker(pill.foreground, 1.6))
+
+      Behavior on color { ColorAnimation { duration: 120 } }
+
+      Rectangle {
+        width: pill.knobSize
+        height: pill.knobSize
+        radius: height / 2
+        x: pill.checked ? parent.width - width - pill.knobInset : pill.knobInset
+        anchors.verticalCenter: parent.verticalCenter
+        color: pill.checked ? Color.background : Qt.darker(pill.foreground, 1.15)
+
+        Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: 120 } }
+      }
+    }
+
+    MouseArea {
+      id: pillMouse
+      anchors.fill: parent
+      enabled: pill.interactive
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onContainsMouseChanged: pill.hovered(containsMouse)
+      onClicked: if (!pill.busy) pill.toggled()
+    }
   }
 
   component SetupChoice: CursorSurface {
