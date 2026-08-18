@@ -2,16 +2,17 @@ import QtQuick
 import QtQuick.Shapes
 import qs.Commons
 
-// Outlined dual-cloud OneDrive mark (two overlapping cloud strokes),
-// matching the macOS / Microsoft tray glyph. Theme-colored, no fill.
+// Filled dual-cloud OneDrive mark (Mac tray / Icons8 iOS glyph):
+// a smaller back cloud with an arch, and a larger front cloud, with a
+// crescent gap between them. Theme-colored fill, no stroke.
 Item {
   id: root
 
   property real iconSize: Style.font.icon
   property color color: Color.foreground
 
-  readonly property real markWidth: 96
-  readonly property real markHeight: 64
+  readonly property real markWidth: 106
+  readonly property real markHeight: 66
 
   width: iconSize * (markWidth / markHeight)
   height: iconSize
@@ -29,31 +30,30 @@ Item {
     Shape {
       anchors.fill: parent
       antialiasing: true
+      preferredRendererType: Shape.CurveRenderer
       layer.enabled: true
-      layer.samples: 4
+      layer.samples: 8
       layer.smooth: true
 
-      // Outer cloud
+      // Back cloud (left puffs + arch)
       ShapePath {
-        fillColor: Qt.rgba(0, 0, 0, 0)
-        strokeColor: root.color
-        strokeWidth: 5.5
-        capStyle: ShapePath.RoundCap
-        joinStyle: ShapePath.RoundJoin
+        fillColor: root.color
+        strokeColor: "transparent"
+        strokeWidth: 0
+        fillRule: ShapePath.WindingFill
         PathSvg {
-          path: "M14 40 C12 30 20 22 30 23 C32 13 46 10 56 16 C64 9 80 12 84 24 C93 26 96 36 90 44 C94 54 82 58 70 57 L28 57 C16 58 12 50 14 40 Z"
+          path: "M1 46 A14 14 0 0 1 12 33.5 A18.5 18.5 0 0 1 29.5 12.5 A21.5 21.5 0 0 1 61.5 2.2 A21.5 21.5 0 0 1 78.8 20 L76.2 22.6 A24.5 24.5 0 0 0 58 16 A26 26 0 0 0 36 32.5 A18 18 0 0 0 22.5 42.5 A16 16 0 0 0 21.2 60.8 L11.5 60.8 A14 14 0 0 1 1 46 Z"
         }
       }
 
-      // Overlapping inner cloud
+      // Front cloud
       ShapePath {
-        fillColor: Qt.rgba(0, 0, 0, 0)
-        strokeColor: root.color
-        strokeWidth: 5.5
-        capStyle: ShapePath.RoundCap
-        joinStyle: ShapePath.RoundJoin
+        fillColor: root.color
+        strokeColor: "transparent"
+        strokeWidth: 0
+        fillRule: ShapePath.WindingFill
         PathSvg {
-          path: "M38 38 C36 28 46 22 56 24 C58 16 70 14 78 22 C86 18 94 26 92 36 C98 38 98 48 90 50 C92 56 82 58 72 56 L52 56 C42 57 36 48 38 38 Z"
+          path: "M27 51 A14.5 14.5 0 0 1 41.5 38 A19.2 19.2 0 0 1 60.2 23 A18.5 18.5 0 0 1 74.5 30.2 A13 13 0 0 1 90 30 A18.5 18.5 0 0 1 105 53 A13.5 13.5 0 0 1 96.2 66 L38.2 66 A14.5 14.5 0 0 1 27 51 Z"
         }
       }
     }
