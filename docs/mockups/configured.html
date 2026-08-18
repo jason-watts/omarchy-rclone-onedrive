@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>rclone OneDrive configured</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <article class="card">
+    <header class="hero">
+      <div class="cloud" aria-hidden="true">
+        <svg viewBox="0 0 104 64">
+          <path d="M0.5 35.5 C1 26 11 13 21.5 10.5 C15 17 9 27 6.5 36.5 C3.5 38 1 37.5 0.5 35.5 Z"/>
+          <path d="M1.2 45 C2 36 16 12 42 1.5 C56 -0.5 70 4 82.5 13.8 C72 16.5 60 24 46 44 C38 56 33 61 29 63.2 C20 64.5 8 59 2.5 50 C1.5 48 1.2 46.5 1.2 45 Z"/>
+          <path d="M39 64 C52 44 64 26 78 19.8 C90 16.5 102 26 104 42 C104.5 52 100 60 90 63.2 C82 64.5 70 64 39 64 Z"/>
+        </svg>
+      </div>
+      <div class="hero-text">
+        <div class="hero-title">rclone OneDrive</div>
+        <div class="hero-meta">hey-com</div>
+      </div>
+      <div class="hero-actions">
+        <div class="icon-btn" title="Open in Files">󰉋</div>
+        <div class="icon-btn" title="Open in Terminal">󰆍</div>
+        <div class="toggle" title="Stop mount"></div>
+      </div>
+    </header>
+
+    <div class="pairs">
+      <div class="pair"><span>State</span><span>Connected</span></div>
+      <div class="pair"><span>Up</span><span>2h 14m</span></div>
+      <div class="pair"><span>Restarts</span><span>0</span></div>
+      <div class="pair"><span>Stored</span><span>48.2 GB of 1 TB</span></div>
+      <div class="pair"><span>Cache</span><span>12 · 86 MB</span></div>
+      <div class="pair"><span>Mount</span><span>~/onedrive/hey-com</span></div>
+    </div>
+
+    <div class="section">RECENT CACHE</div>
+    <div class="row">
+      <div class="row-icon">󰈙</div>
+      <div class="row-body">
+        <div class="row-title">Q3-budget.xlsx</div>
+        <div class="row-cap">12m ago · Finance · 186 KB</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-icon">󰋩</div>
+      <div class="row-body">
+        <div class="row-title">deck-cover.png</div>
+        <div class="row-cap">1h ago · Slides · 2.4 MB</div>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+    <div class="footer-row">
+      <div>
+        <div class="footer-title">Mount at boot</div>
+        <div class="footer-cap">Starts before login</div>
+      </div>
+      <div class="toggle sm"></div>
+    </div>
+    <div class="footer-row danger">
+      <div>
+        <div class="footer-title">Remove remote</div>
+        <div class="footer-cap">Deletes hey-com from rclone</div>
+      </div>
+    </div>
+  </article>
+</body>
+</html>
