@@ -48,12 +48,12 @@ Then click the icon again.
 4. The panel says **Waiting for the browser…**, then switches to the
    status view.
 
-Keys if you prefer the keyboard: `j`/`k` move, type a remote name, `Enter` or `L` starts sign-in, `Esc` closes.
+Keys if you prefer the keyboard: `j`/`k` move, optionally type a remote name, `Enter` or `L` starts sign-in, `Esc` closes. Leave the name blank to use the signed-in account’s domain.
 
 ## 3. Check that it worked
 
 ```bash
-rclone listremotes          # expect the name you typed
+rclone listremotes          # expect the name you typed, or the sign-in domain
 findmnt ~/OneDrive          # expect that name as fuse.rclone
 systemctl --user is-active "rclone-<name>.service"   # active
 /bin/ls ~/OneDrive | head
@@ -82,7 +82,7 @@ A leftover FUSE handle prints `Transport endpoint is not connected`.
 
 | Piece | Where |
 |---|---|
-| rclone remote | the name you typed, in `~/.config/rclone/rclone.conf` |
+| rclone remote | the name you typed or the sign-in domain, in `~/.config/rclone/rclone.conf` |
 | Mount | `~/OneDrive` |
 | systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
 | RC | `http://127.0.0.1:5572` |

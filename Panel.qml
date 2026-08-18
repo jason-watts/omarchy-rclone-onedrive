@@ -56,7 +56,7 @@ Panel {
   ]
   property int setupIndex: 0
   readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
-  readonly property string setupRemoteHint: store.setupAccount === "personal" ? "home" : "work"
+  readonly property string setupRemoteHint: "signed-in domain"
   readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)
     + Math.min(middle.implicitHeight, Style.space(340))
     + (footer.visible ? Style.space(12) + footer.implicitHeight : 0)
@@ -286,14 +286,7 @@ Panel {
       return
     }
     if (root.setupAsksName) {
-      var name = sanitizedSetupRemote()
-      if (name === "") {
-        store.lastError = "Give this remote a name"
-        store.actionStatus = ""
-        focusSetupName()
-        return
-      }
-      store.setupRemote = name
+      store.setupRemote = sanitizedSetupRemote()
     }
     store.runSetup("setup")
   }
@@ -612,7 +605,7 @@ Panel {
 
               Text {
                 width: parent.width
-                text: "rclone remote name — letters, numbers, hyphen. Not the folder."
+                text: "Optional. Blank uses the domain of the Microsoft account you sign into (philotic.net → philotic)."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption

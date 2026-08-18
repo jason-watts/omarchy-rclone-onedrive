@@ -9,6 +9,7 @@ mount unit. Never prints tokens.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 RCLONE_BIN = "/home/jason/.local/bin/rclone"
 URL_RE = re.compile(r"https?://[^\s\"'<>]+")
@@ -132,6 +134,76 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
     if text.startswith("{") and "access_token" in text:
         return text, ""
     return "", tail or "rclone authorize did not return a token"
+
+
+def jwt_claims(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def email_from_claims(claims: dict) -> str:
+    for key in ("preferred_username", "upn", "unique_name", "email"):
+        value = claims.get(key)
+        if isinstance(value, str) and "@" in value:
+            return value.strip()
+    return ""
+
+
+def email_from_token_blob(token_blob: str) -> str:
+    try:
+        data = json.loads(token_blob)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    for key in ("id_token", "access_token"):
+        email = email_from_claims(jwt_claims(str(data.get(key) or "")))
+        if email:
+            return email
+    access = str(data.get("access_token") or "")
+    if not access:
+        return ""
+    try:
+        req = Request(
+            "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,mail",
+            headers={"Authorization": f"Bearer {access}"},
+        )
+        with urlopen(req, timeout=8) as resp:
+            me = json.loads(resp.read().decode("utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ""
+    if not isinstance(me, dict):
+        return ""
+    for key in ("userPrincipalName", "mail"):
+        value = me.get(key)
+        if isinstance(value, str) and "@" in value:
+            return value.strip()
+    return ""
+
+
+def sanitize_remote(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "", name or "")
+
+
+def remote_from_email(email: str, taken: set[str]) -> str:
+    if "@" not in (email or ""):
+        return ""
+    domain = email.rsplit("@", 1)[-1].lower().strip()
+    label = domain.split(".")[0] if domain else ""
+    base = sanitize_remote(label) or sanitize_remote(domain.replace(".", "-"))
+    name = base
+    n = 2
+    while name in taken:
+        name = f"{base}-{n}"
+        n += 1
+    return name
 
 
 def ni(bin_path: str, name: str, extra: list[str]) -> dict:
@@ -407,18 +479,25 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return fail("rclone is not installed")
     account = args.account
     region = args.region or "global"
-    remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
-    if not remote:
-        return fail("Give this remote a name")
+    requested = sanitize_remote(args.remote or "")
+    remotes = existing_remotes(binary)
+    if requested and requested in remotes and not args.reconnect:
+        return fail(f"rclone remote {requested} already exists")
     mount = str(Path(args.mount or (Path.home() / "OneDrive")).expanduser())
-    if remote in existing_remotes(binary) and not args.reconnect:
-        return fail(f"rclone remote {remote} already exists")
     Path(mount).mkdir(parents=True, exist_ok=True)
     ends = endpoints(account, region)
     token, error = authorize(binary, ends["auth_url"], ends["token_url"])
     if error:
         return fail(error)
-    if args.reconnect and remote in existing_remotes(binary):
+    if args.reconnect:
+        remote = requested
+        if not remote or remote not in remotes:
+            return fail("No existing remote to reconnect")
+    else:
+        remote = requested or remote_from_email(email_from_token_blob(token), remotes)
+        if not remote:
+            return fail("Could not name the remote from the signed-in account")
+    if args.reconnect:
         unit = f"rclone-{remote}.service"
         stop_user_unit(unit, mount)
         proc = subprocess.run(
