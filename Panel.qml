@@ -40,8 +40,7 @@ Panel {
   readonly property bool showSetup: store.needsSetup || store.needsAuth || store.needsMount || !store.rcloneInstalled
   readonly property var setupAccounts: [
     { id: "personal", label: "Personal Microsoft account", caption: "login.microsoftonline.com/consumers" },
-    { id: "business", label: "Work or school", caption: "login.microsoftonline.com/organizations" },
-    { id: "sharepoint", label: "SharePoint library", caption: "Same work login, then pick a library" }
+    { id: "business", label: "Work or school", caption: "login.microsoftonline.com/organizations" }
   ]
   property int setupIndex: 0
   readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)

@@ -26,7 +26,7 @@ If a remote or mount is still there, skip to [Reset and try again](#reset-and-tr
 Click the **OneDrive cloud** on the bar (right side, by Tailscale).
 
 The panel should say **Set up rclone** / **First-time setup**, with
-**Personal**, **Work or school**, and **SharePoint** rows. Clicking a row
+**Personal** and **Work or school** rows. Clicking a row
 starts Microsoft sign-in.
 
 If it still shows Connected / Mount stopped:
