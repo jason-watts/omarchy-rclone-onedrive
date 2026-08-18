@@ -495,9 +495,9 @@ Item {
         root.statusText = "Set up rclone"
       } else if (parsed.action === "authorized") {
         root.lastError = ""
-        root.setupPending = true
         root.setupDomain = String(parsed.domain || "")
         if (parsed.suggestedRemote) root.setupRemote = String(parsed.suggestedRemote)
+        root.setupPending = true
         root.actionStatus = root.setupRemote !== ""
           ? "Signed in. Remote name is " + root.setupRemote
           : "Signed in. Name this remote, then create the mount"

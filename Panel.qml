@@ -57,8 +57,8 @@ Panel {
   property int setupIndex: 0
   readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
   readonly property string setupRemoteHint: store.setupPending
-    ? (store.setupRemote || "philotic-net")
-    : "filled after sign-in"
+    ? "edit if you want a different name"
+    : "filled after you sign in"
   readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)
     + Math.min(middle.implicitHeight, Style.space(340))
     + (footer.visible ? Style.space(12) + footer.implicitHeight : 0)
@@ -274,7 +274,14 @@ Panel {
   }
 
   function sanitizedSetupRemote() {
-    return String(store.setupRemote || "").toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9_-]/g, "")
+    var typed = setupNameField ? String(setupNameField.text || "") : ""
+    var stored = String(store.setupRemote || "")
+    return (typed || stored).toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9_-]/g, "")
+  }
+
+  function applySetupRemote(name) {
+    store.setupRemote = name
+    if (setupNameField && setupNameField.text !== name) setupNameField.text = name
   }
 
   function runSetupAction() {
@@ -287,7 +294,7 @@ Panel {
       return
     }
     if (root.setupAsksName) {
-      store.setupRemote = sanitizedSetupRemote()
+      applySetupRemote(sanitizedSetupRemote())
     }
     if (store.setupPending) {
       if (sanitizedSetupRemote() === "") {
@@ -388,7 +395,9 @@ Panel {
       }
     }
     function onSetupPendingChanged() {
-      if (store.setupPending) root.focusSetupName()
+      if (!store.setupPending) return
+      applySetupRemote(String(store.setupRemote || ""))
+      root.focusSetupName()
     }
   }
 
@@ -599,12 +608,11 @@ Panel {
               TextField {
                 id: setupNameField
                 width: parent.width
-                text: store.setupRemote
                 placeholderText: root.setupRemoteHint
                 foreground: root.foreground
                 font.family: root.fontFamily
                 hasCursor: root.cursorActive && root.focusSection === "setupName"
-                validator: RegularExpressionValidator { regularExpression: /[A-Za-z0-9_-]*/ }
+                validator: RegularExpressionValidator { regularExpression: /[A-Za-z0-9_.-]*/ }
                 onTextChanged: store.setupRemote = text
                 onActiveFocusChanged: {
                   if (activeFocus) {

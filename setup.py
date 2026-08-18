@@ -558,8 +558,6 @@ def cmd_setup(args: argparse.Namespace) -> int:
     Path(mount).mkdir(parents=True, exist_ok=True)
     ends = endpoints(account, region)
     pending = None if args.reconnect else load_pending()
-    if pending and not requested:
-        return fail("Give this remote a name")
     if pending:
         token = str(pending.get("token") or "")
         if not token:
