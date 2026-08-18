@@ -577,6 +577,39 @@ def lazy_unmount(mount: str) -> None:
         pass
 
 
+def still_mounted(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        check = subprocess.run(
+            ["findmnt", "-n", path],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return True
+    return check.returncode == 0
+
+
+def remove_empty_mount(path: str) -> None:
+    if not path:
+        return
+    folder = Path(path)
+    if not folder.is_dir() or still_mounted(str(folder)):
+        return
+    try:
+        folder.rmdir()
+    except OSError:
+        return
+    parent = folder.parent
+    if parent == Path.home() / "onedrive" and parent.is_dir() and not still_mounted(str(parent)):
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
+
+
 def cmd_remove(args: argparse.Namespace) -> int:
     try:
         return _cmd_remove(args)
@@ -609,6 +642,9 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     error = delete_remote(binary, remote)
     if error:
         return fail(error, remote=remote, mount=mount, unit=unit)
+    leftover = leftover or find_mount(remote)
+    for path in (mount, leftover, default_mount(remote)):
+        remove_empty_mount(path)
     clear_pending()
     return emit(
         {

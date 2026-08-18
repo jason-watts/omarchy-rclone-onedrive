@@ -752,7 +752,7 @@ Panel {
         z: 20
         opened: false
         message: store.remote !== ""
-          ? "Remove rclone remote “" + store.remote + "”? The mount stops and the local login is deleted. Files stay in OneDrive."
+          ? "Remove rclone remote “" + store.remote + "”? The mount stops, the empty local folder is deleted, and the local login is removed. Files stay in OneDrive."
           : "Remove this rclone remote?"
         cancelText: "Cancel"
         confirmText: "Remove"

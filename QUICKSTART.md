@@ -69,7 +69,7 @@ In the panel:
 - the folder and terminal icons in the hero open the mount
 - `p` or the toggle stops and starts the mount
 - At the bottom, **Mount at boot** (or `b`) turns on `loginctl linger` so the user unit starts before login
-- **Remove remote** unmounts, deletes the user unit, and removes that rclone remote. Cloud files stay put.
+- **Remove remote** unmounts, deletes the user unit, removes that rclone remote, and deletes the empty `~/onedrive/<name>` folder. Cloud files stay put.
 
 If a terminal was already `cd`’d into `~/onedrive/philotic-net` before a remount:
 

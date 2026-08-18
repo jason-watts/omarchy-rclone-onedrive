@@ -92,7 +92,7 @@ omarchy bar set jason.rclone-onedrive rcUrl http://127.0.0.1:5572 --json
 - `r` refresh
 - `Esc` close
 
-**Remove remote** is at the bottom of the panel. It unmounts, deletes the user systemd unit, and runs `rclone config delete`. Cloud files stay in OneDrive.
+**Remove remote** is at the bottom of the panel. It unmounts, deletes the user systemd unit, runs `rclone config delete`, and removes the empty `~/onedrive/<name>` folder. Cloud files stay in OneDrive.
 
 Middle-click the icon opens Files. Right-click refreshes.
 
