@@ -6,7 +6,7 @@
   "author": "Jason Watts",
   "license": "MIT",
   "homepage": "https://github.com/jason-watts/omarchy-rclone-onedrive",
-  "description": "rclone OneDrive mount status, quota, transfers, and start/stop in the Omarchy bar.",
+  "description": "Automate your OneDrive rclone configuration from the Omarchy bar.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "rclone OneDrive",
-    "description": "Show whether an rclone OneDrive mount is connected, plus quota and transfers.",
+    "description": "Automate your OneDrive rclone configuration from the Omarchy bar.",
     "category": "Files",
     "aliases": ["onedrive", "rclone", "mount"],
     "allowMultiple": false,

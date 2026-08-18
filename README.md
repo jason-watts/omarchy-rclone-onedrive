@@ -1,8 +1,6 @@
 # rclone OneDrive
 
-Omarchy bar widget for an rclone OneDrive mount. Not [OmaOneDrive](https://github.com/salemsayed/omaonedrive).
-
-Needs Omarchy Quattro, Python 3, and `rclone` (the panel can install rclone if it is missing). MIT licensed.
+Automate your OneDrive rclone configuration from the Omarchy bar. Sign in with Microsoft, mount the drive at `~/onedrive/<name>`, and open it in Files or a terminal.
 
 ## 1. Install
 
@@ -30,3 +28,5 @@ omarchy plugin remove jason.rclone-onedrive
 ```
 
 That only removes the plugin. Use **Remove remote** first if you also want the mount gone.
+
+MIT. Needs Omarchy Quattro, Python 3, and `rclone`.
