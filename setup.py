@@ -527,6 +527,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
     Path(mount).mkdir(parents=True, exist_ok=True)
     ends = endpoints(account, region)
     pending = None if args.reconnect else load_pending()
+    if pending and not requested:
+        return fail("Give this remote a name")
     if pending:
         token = str(pending.get("token") or "")
         if not token:
@@ -565,32 +567,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 "error": "",
             }
         )
-    token, error = authorize(binary, ends["auth_url"], ends["token_url"])
-    if error:
-        return fail(error)
     if not args.reconnect:
-        email = email_from_token_blob(token)
-        suggested = requested or remote_from_email(email, remotes)
-        domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
-        save_pending(
-            {
-                "created": time.time(),
-                "account": account,
-                "region": region,
-                "token": token,
-                "suggestedRemote": suggested,
-                "domain": domain,
-            }
-        )
-        return emit(
-            {
-                "ok": True,
-                "action": "authorized",
-                "suggestedRemote": suggested,
-                "domain": domain,
-                "error": "",
-            }
-        )
+        return fail("Sign in with Microsoft first")
     if args.reconnect:
         remote = requested
         if not remote or remote not in remotes:
@@ -630,6 +608,47 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return fail("Sign in again to continue setup")
 
 
+def cmd_discard() -> int:
+    clear_pending()
+    return emit({"ok": True, "action": "discard", "error": ""})
+
+
+def cmd_authorize(args: argparse.Namespace) -> int:
+    binary = rclone_bin()
+    if not binary:
+        return fail("rclone is not installed")
+    clear_pending()
+    account = args.account
+    region = args.region or "global"
+    remotes = existing_remotes(binary)
+    ends = endpoints(account, region)
+    token, error = authorize(binary, ends["auth_url"], ends["token_url"])
+    if error:
+        return fail(error)
+    email = email_from_token_blob(token)
+    suggested = remote_from_email(email, remotes)
+    domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+    save_pending(
+        {
+            "created": time.time(),
+            "account": account,
+            "region": region,
+            "token": token,
+            "suggestedRemote": suggested,
+            "domain": domain,
+        }
+    )
+    return emit(
+        {
+            "ok": True,
+            "action": "authorized",
+            "suggestedRemote": suggested,
+            "domain": domain,
+            "error": "",
+        }
+    )
+
+
 def cmd_install_rclone() -> int:
     launcher = shutil.which("omarchy-launch-floating-terminal-with-presentation")
     pkg = shutil.which("omarchy-pkg-add") or "omarchy"
@@ -651,7 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="setup",
-        choices=["setup", "reconnect", "install-rclone", "remove"],
+        choices=["setup", "authorize", "discard", "reconnect", "install-rclone", "remove"],
     )
     parser.add_argument("--account", default="personal", choices=["personal", "business", "sharepoint"])
     parser.add_argument("--region", default="global")
@@ -667,6 +686,10 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.command == "install-rclone":
         return cmd_install_rclone()
+    if args.command == "discard":
+        return cmd_discard()
+    if args.command == "authorize":
+        return cmd_authorize(args)
     if args.command == "remove":
         return cmd_remove(args)
     if args.command == "reconnect":

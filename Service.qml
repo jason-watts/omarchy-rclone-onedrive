@@ -55,6 +55,7 @@ Item {
   readonly property bool alarming: Model.alarming(state)
   readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running || setupProcess.running || lingerProcess.running
   readonly property bool mutating: controlProcess.running || setupProcess.running || lingerProcess.running
+  readonly property bool setupRunning: setupProcess.running
   readonly property string setupHelperPath: resolvedSetupHelper()
   readonly property string helperPath: resolvedHelper()
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 15, 5, 3600)
@@ -72,6 +73,7 @@ Item {
   property string _lingerError: ""
   property string _prevState: ""
   property bool _suppressNotify: false
+  property bool _setupCancelled: false
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -264,8 +266,27 @@ Item {
     Quickshell.execDetached(["xdg-open", path])
   }
 
+  function cancelSetup() {
+    if (!setupProcess.running) return
+    _setupCancelled = true
+    setupProcess.running = false
+  }
+
+  function discardPending() {
+    setupPending = false
+    setupDomain = ""
+    if (setupHelperPath === "") return
+    Quickshell.execDetached(["/usr/bin/python3", setupHelperPath, "discard"])
+  }
+
   function runSetup(kind) {
-    if (setupProcess.running || setupHelperPath === "") return
+    if (setupHelperPath === "") return
+    if (kind === "authorize" && setupProcess.running) {
+      cancelSetup()
+      Qt.callLater(function() { root.runSetup("authorize") })
+      return
+    }
+    if (setupProcess.running) return
     _setupOutput = ""
     _setupError = ""
     if (kind === "install-rclone") {
@@ -274,12 +295,15 @@ Item {
     } else if (kind === "reconnect") {
       actionStatus = "Complete sign-in in the browser…"
       setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || setupRemote)]
-    } else {
+    } else if (kind === "authorize") {
       actionStatus = "Complete sign-in in the browser…"
+      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "authorize", "--account", setupAccount]
+    } else {
+      actionStatus = "Creating mount…"
       setupProcess.command = [
         "/usr/bin/python3", setupHelperPath, "setup",
         "--account", setupAccount,
-        "--remote", String(setupRemote || setting("remote", "")),
+        "--remote", String(setupRemote || ""),
         "--mount", String(setting("mountPath", "") || "")
       ]
     }
@@ -434,6 +458,10 @@ Item {
     stdout: StdioCollector { id: setupStdout; waitForEnd: true; onStreamFinished: root._setupOutput = text }
     stderr: StdioCollector { id: setupStderr; waitForEnd: true; onStreamFinished: root._setupError = text }
     onExited: function(exitCode) {
+      if (root._setupCancelled) {
+        root._setupCancelled = false
+        return
+      }
       var stdout = String(setupStdout.text || root._setupOutput || "")
       var stderr = String(setupStderr.text || root._setupError || "")
       var parsed = Model.parseAction(stdout)

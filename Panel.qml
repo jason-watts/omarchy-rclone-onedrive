@@ -278,7 +278,6 @@ Panel {
   }
 
   function runSetupAction() {
-    if (store.busy) return
     if (!store.rcloneInstalled) {
       store.runSetup("install-rclone")
       return
@@ -297,8 +296,11 @@ Panel {
         focusSetupName()
         return
       }
+      if (store.setupRunning) return
+      store.runSetup("setup")
+      return
     }
-    store.runSetup("setup")
+    store.runSetup("authorize")
   }
 
   function focusSetupName() {
@@ -338,8 +340,15 @@ Panel {
   }
 
   function selectSetupAccount(index) {
+    var next = setupAccounts[index].id
     setSetupCursor(index)
-    store.setupAccount = setupAccounts[index].id
+    if (store.setupAccount === next) return
+    store.setupAccount = next
+    store.cancelSetup()
+    store.discardPending()
+    store.setupRemote = ""
+    store.actionStatus = ""
+    store.lastError = ""
   }
 
   function openTerminal() {
@@ -977,8 +986,8 @@ Panel {
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
-      cursorShape: store.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
-      enabled: !store.busy
+      cursorShape: Qt.PointingHandCursor
+      enabled: true
       onEntered: {
         root.cursorActive = true
         root.focusSection = "setupGo"
@@ -1020,7 +1029,7 @@ Panel {
         }
         Text {
           Layout.fillWidth: true
-          text: store.busy
+          text: store.setupRunning && !store.setupPending
             ? "Waiting for the browser…"
             : (store.setupPending
               ? "Creates rclone remote " + (store.setupRemote || "…") + " and mounts it"
