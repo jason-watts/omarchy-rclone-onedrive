@@ -21,12 +21,11 @@ The helper never walks the live FUSE mount. Recent files come from `~/.cache/rcl
 
 If rclone or an OneDrive remote is missing, the panel is a wizard instead of the status view.
 
-1. Choose **Personal Microsoft account**, **Work or school**, or **SharePoint library**.
-2. Click **Sign in with Microsoft** (or press `L`).
-3. Finish login in the browser. Personal uses `login.microsoftonline.com/consumers` so you do not land on a work tenant by mistake. Work uses `/organizations`. The panel closes while the browser is up, then opens again after Microsoft confirms.
-4. The remote is named from the signed-in domain (dots become hyphens). The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/onedrive/<name>`.
+1. Click **Personal Microsoft account**, **Work or school**, or **SharePoint library**. That starts Microsoft sign-in.
+2. Finish login in the browser. Personal uses `login.microsoftonline.com/consumers` so you do not land on a work tenant by mistake. Work uses `/organizations`. The panel closes while the browser is up, then opens again after Microsoft confirms.
+3. The remote is named from the signed-in domain (dots become hyphens). The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/onedrive/<name>`.
 
-`omarchy-shell jason.rclone-onedrive setup` starts the same flow. If the token later expires, the panel offers **Sign in again**.
+`omarchy-shell jason.rclone-onedrive setup` starts the same flow. If the token later expires, click Personal or Work or school again.
 
 ## Requirements
 

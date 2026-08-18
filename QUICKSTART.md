@@ -25,8 +25,9 @@ If a remote or mount is still there, skip to [Reset and try again](#reset-and-tr
 
 Click the **OneDrive cloud** on the bar (right side, by Tailscale).
 
-The panel should say **Set up rclone** / **First-time setup**, with three
-account rows and **Sign in with Microsoft**.
+The panel should say **Set up rclone** / **First-time setup**, with
+**Personal**, **Work or school**, and **SharePoint** rows. Clicking a row
+starts Microsoft sign-in.
 
 If it still shows Connected / Mount stopped:
 
@@ -40,7 +41,7 @@ Then click the icon again.
 ## 2. Sign in
 
 1. Click **Personal Microsoft account** (that is the old philotic account type).
-   That only selects the account type. Then click **Sign in with Microsoft**.
+   That starts Microsoft sign-in.
 2. A browser tab should open on
    `login.microsoftonline.com/consumers` (not `/common`, not a quoted
    `localhost:53682/"`).
@@ -50,7 +51,7 @@ Then click the icon again.
    account domain (`philotic.net` → `philotic-net`), creates the mount, then
    switches to the status view. There is no rename step.
 
-Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `Esc` closes.
+Keys if you prefer the keyboard: `j`/`k` move, `Enter` starts sign-in on the highlighted account, `Esc` closes.
 
 ## 3. Check that it worked
 

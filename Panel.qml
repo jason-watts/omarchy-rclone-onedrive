@@ -53,7 +53,7 @@ Panel {
   function ensureCursor() {
     if (root.showSetup) {
       if (focusSection !== "setup" && focusSection !== "setupGo" && focusSection !== "header")
-        focusSection = "setup"
+        focusSection = store.rcloneInstalled ? "setup" : "setupGo"
       if (setupIndex < 0) setupIndex = 0
       if (setupIndex >= setupAccounts.length) setupIndex = setupAccounts.length - 1
       return
@@ -139,11 +139,10 @@ Panel {
         setupIndex += 1
         return
       }
-      if (dy > 0) focusSection = "setupGo"
       return
     }
     if (focusSection === "setupGo") {
-      if (dy < 0) focusSection = "setup"
+      if (dy < 0) setHeaderCursor()
       return
     }
     if (focusSection === "files") {
@@ -181,7 +180,7 @@ Panel {
       else if (headerIndex === toggleHeaderIndex) toggleRunning()
       else if (root.showSetup) focusSection = "setup"
     } else if (focusSection === "setup") {
-      store.setupAccount = setupAccounts[setupIndex].id
+      root.selectSetupAccount(setupIndex)
     } else if (focusSection === "setupGo") {
       root.runSetupAction()
     } else if (focusSection === "linger") {
@@ -277,11 +276,11 @@ Panel {
   function selectSetupAccount(index) {
     var next = setupAccounts[index].id
     setSetupCursor(index)
-    if (store.setupAccount === next) return
     store.setupAccount = next
     store.cancelSetup()
     store.actionStatus = ""
     store.lastError = ""
+    root.runSetupAction()
   }
 
   function openTerminal() {
@@ -518,6 +517,7 @@ Panel {
             }
 
             SetupGo {
+              visible: !store.rcloneInstalled
               width: parent.width
             }
           }
@@ -780,10 +780,9 @@ Panel {
     id: choiceRow
     property var account: ({})
     property int rowIndex: 0
-    readonly property bool selected: store.setupAccount === String(account.id || "")
 
-    hasCursor: root.cursorActive && root.focusSection === "setup" && root.setupIndex === rowIndex && !selected
-    current: selected
+    hasCursor: root.cursorActive && root.focusSection === "setup" && root.setupIndex === rowIndex
+    current: false
     foreground: root.foreground
     implicitHeight: choiceBody.implicitHeight + Style.spacing.rowPaddingX
 
@@ -804,10 +803,10 @@ Panel {
       spacing: Style.space(8)
 
       Text {
-        text: choiceRow.selected ? "●" : "○"
+        text: "󰌋"
         color: root.foreground
         font.family: root.fontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.icon
         Layout.alignment: Qt.AlignVCenter
       }
 
@@ -874,11 +873,7 @@ Panel {
         spacing: Style.space(1)
         Text {
           Layout.fillWidth: true
-          text: !store.rcloneInstalled
-            ? "Install rclone"
-            : (store.needsAuth && !store.needsSetup
-              ? "Sign in again"
-              : "Sign in with Microsoft")
+          text: "Install rclone"
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -886,9 +881,7 @@ Panel {
         }
         Text {
           Layout.fillWidth: true
-          text: store.setupRunning
-            ? "Waiting for the browser…"
-            : "Signs in, names the remote from the account domain, and mounts it"
+          text: "Needed before OneDrive can be mounted"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
