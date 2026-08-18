@@ -191,6 +191,31 @@ def unix_timestamp_ms(value: str) -> int:
     return number * 1000
 
 
+def linger_enabled() -> bool:
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    if not user:
+        return False
+    _code, stdout, _stderr = run(
+        ["loginctl", "show-user", user, "-p", "Linger"], timeout=2.0
+    )
+    return "Linger=yes" in stdout
+
+
+def set_linger(enabled: bool) -> tuple[bool, str]:
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    if not user:
+        return False, "No USER"
+    verb = "enable-linger" if enabled else "disable-linger"
+    code, stdout, stderr = run(["loginctl", verb, user], timeout=8.0)
+    if code != 0:
+        code, stdout, stderr = run(
+            ["pkexec", "loginctl", verb, user], timeout=30.0
+        )
+    if code != 0:
+        return False, (stderr or stdout or f"loginctl {verb} failed").strip()[:280]
+    return True, ""
+
+
 def rclone_installed() -> bool:
     found = shutil.which("rclone")
     return bool(found or Path(RCLONE_BIN).is_file())
@@ -492,6 +517,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             "needsSetup": needs_setup,
             "needsMount": needs_mount,
             "needsAuth": needs_auth,
+            "linger": linger_enabled(),
             "lastError": unit["error"],
         }
     )
@@ -562,6 +588,14 @@ def cmd_about(args: argparse.Namespace) -> int:
     return emit(quota)
 
 
+def cmd_linger(args: argparse.Namespace) -> int:
+    enabled = args.command == "linger-on"
+    ok, error = set_linger(enabled)
+    if not ok:
+        return emit({"ok": False, "action": args.command, "error": error, "linger": linger_enabled()})
+    return emit({"ok": True, "action": args.command, "error": "", "linger": linger_enabled()})
+
+
 def cmd_control(args: argparse.Namespace) -> int:
     verb = args.command
     if not args.unit:
@@ -595,7 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="status",
-        choices=["status", "about", "start", "stop", "restart"],
+        choices=["status", "about", "start", "stop", "restart", "linger-on", "linger-off"],
     )
     return parser
 
@@ -607,6 +641,8 @@ def main() -> int:
         return cmd_status(args)
     if args.command == "about":
         return cmd_about(args)
+    if args.command in ("linger-on", "linger-off"):
+        return cmd_linger(args)
     return cmd_control(args)
 
 

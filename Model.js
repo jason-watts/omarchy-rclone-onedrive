@@ -32,6 +32,7 @@ function defaultStatus() {
     needsSetup: false,
     needsMount: false,
     needsAuth: false,
+    linger: false,
     lastError: ""
   }
 }

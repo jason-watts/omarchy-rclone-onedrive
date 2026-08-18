@@ -60,7 +60,7 @@ Panel {
       fileIndex = 0
       return
     }
-    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "openFiles" && focusSection !== "openTerm")
+    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "openFiles" && focusSection !== "openTerm" && focusSection !== "linger")
       focusSection = "files"
     if (fileIndex >= displayFiles.length) fileIndex = Math.max(0, displayFiles.length - 1)
     if (fileIndex < 0) fileIndex = 0
@@ -71,7 +71,15 @@ Panel {
     ensureCursor()
     if (dy === 0) return
     if (focusSection === "header") {
-      if (dy > 0) focusSection = root.showSetup ? "setup" : "openFiles"
+      if (dy > 0) focusSection = root.showSetup ? "setup" : (store.unitScope === "user" ? "linger" : "openFiles")
+      return
+    }
+    if (focusSection === "linger") {
+      if (dy < 0) {
+        setHeaderCursor()
+        return
+      }
+      if (dy > 0) focusSection = "openFiles"
       return
     }
     if (focusSection === "setup") {
@@ -96,7 +104,8 @@ Panel {
     }
     if (focusSection === "openFiles") {
       if (dy < 0) {
-        setHeaderCursor()
+        if (store.unitScope === "user") focusSection = "linger"
+        else setHeaderCursor()
         return
       }
       if (dy > 0) focusSection = "openTerm"
@@ -141,8 +150,11 @@ Panel {
       else toggleRunning()
     } else if (focusSection === "setup") {
       store.setupAccount = setupAccounts[setupIndex].id
+      root.runSetupAction()
     } else if (focusSection === "setupGo") {
       root.runSetupAction()
+    } else if (focusSection === "linger") {
+      store.toggleLinger()
     } else if (focusSection === "openFiles") store.openInFiles()
     else if (focusSection === "openTerm") openTerminal()
     else if (focusSection === "files") store.openFile(selectedFile())
@@ -307,6 +319,7 @@ Panel {
         else if (t === "o" || t === "O") store.openInFiles()
         else if (t === "t" || t === "T") root.openTerminal()
         else if (t === "p" || t === "P") root.toggleRunning()
+        else if (t === "b" || t === "B") store.toggleLinger()
         else if (t === "l" || t === "L") root.runSetupAction()
       }
 
@@ -424,6 +437,24 @@ Panel {
               value: store.cacheFiles + " · " + Model.formatBytes(store.cacheBytes)
             }
             InfoPair { label: "Mount"; value: store.mountPath }
+          }
+
+          Toggle {
+            visible: !store.needsSetup && store.unitScope === "user"
+            width: parent.width
+            label: "Mount at boot"
+            description: store.lingerActive ? "User services start before login" : "Mounts when you log in"
+            checked: store.lingerActive
+            hasCursor: root.cursorActive && root.focusSection === "linger"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onHovered: function(on) {
+              if (on) {
+                root.cursorActive = true
+                root.focusSection = "linger"
+              }
+            }
+            onClicked: store.toggleLinger()
           }
 
           Text {
@@ -568,7 +599,10 @@ Panel {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onEntered: root.setSetupCursor(choiceRow.rowIndex)
-      onClicked: root.setSetupCursor(choiceRow.rowIndex)
+      onClicked: {
+        root.setSetupCursor(choiceRow.rowIndex)
+        root.runSetupAction()
+      }
     }
 
     RowLayout {

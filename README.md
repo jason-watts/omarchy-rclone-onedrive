@@ -87,6 +87,7 @@ omarchy bar set jason.rclone-onedrive rcUrl http://127.0.0.1:5572 --json
 - `o` open in Files
 - `t` open in Terminal
 - `p` start / stop the mount
+- `b` mount at boot (user linger)
 - `r` refresh
 - `Esc` close
 

@@ -33,6 +33,8 @@ Item {
   property bool needsMount: false
   property bool needsAuth: false
   property string setupAccount: "personal"
+  property bool linger: false
+  property string unitScope: "user"
   property bool refreshing: false
   property bool aboutRefreshing: false
   property double usedBytes: 0
@@ -43,10 +45,12 @@ Item {
   property string lastError: ""
 
   property int _desired: -1
+  property int _lingerDesired: -1
   readonly property bool active: _desired === -1 ? running : (_desired === 1)
+  readonly property bool lingerActive: _lingerDesired === -1 ? linger : (_lingerDesired === 1)
   readonly property bool healthy: state === "healthy"
   readonly property bool alarming: Model.alarming(state)
-  readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running || setupProcess.running
+  readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running || setupProcess.running || lingerProcess.running
   readonly property string setupHelperPath: resolvedSetupHelper()
   readonly property string helperPath: resolvedHelper()
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 15, 5, 3600)
@@ -60,6 +64,8 @@ Item {
   property string _controlError: ""
   property string _setupOutput: ""
   property string _setupError: ""
+  property string _lingerOutput: ""
+  property string _lingerError: ""
   property string _prevState: ""
   property bool _suppressNotify: false
 
@@ -163,7 +169,10 @@ Item {
     needsSetup = parsed.needsSetup === true
     needsMount = parsed.needsMount === true
     needsAuth = parsed.needsAuth === true
+    linger = parsed.linger === true
+    unitScope = String(parsed.unitScope || "user")
     if (_desired !== -1 && running === (_desired === 1)) _desired = -1
+    if (_lingerDesired !== -1 && linger === (_lingerDesired === 1)) _lingerDesired = -1
     if (_desired === -1) _suppressNotify = false
     lastError = parsed.lastError || ""
   }
@@ -191,6 +200,21 @@ Item {
   function start() { runControl("start", 1) }
   function stop() { runControl("stop", 0) }
   function restart() { runControl("restart", 1) }
+
+  function toggleLinger() {
+    if (lingerProcess.running) return
+    setLinger(!lingerActive)
+  }
+
+  function setLinger(on) {
+    if (lingerProcess.running || helperPath === "") return
+    _lingerDesired = on ? 1 : 0
+    _lingerOutput = ""
+    _lingerError = ""
+    actionStatus = on ? "Enabling mount at boot…" : "Disabling mount at boot…"
+    lingerProcess.command = ["/usr/bin/python3", helperPath, on ? "linger-on" : "linger-off"].concat(helperArgs())
+    lingerProcess.running = true
+  }
 
   function runControl(verb, desired) {
     if (controlProcess.running || helperPath === "") return
@@ -402,6 +426,31 @@ Item {
       settleTimer.restart()
       root.refresh()
       root.refreshAbout()
+    }
+  }
+
+  Process {
+    id: lingerProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: lingerStdout; waitForEnd: true; onStreamFinished: root._lingerOutput = text }
+    stderr: StdioCollector { id: lingerStderr; waitForEnd: true; onStreamFinished: root._lingerError = text }
+    onExited: function(exitCode) {
+      var stdout = String(lingerStdout.text || root._lingerOutput || "")
+      var stderr = String(lingerStderr.text || root._lingerError || "")
+      var parsed = Model.parseAction(stdout)
+      if (exitCode !== 0 || parsed.ok === false) {
+        root._lingerDesired = -1
+        root.lastError = root.elide(parsed.error || stderr || stdout || "Could not change boot mount")
+        root.actionStatus = root.lastError
+      } else {
+        root.lastError = ""
+        root.linger = parsed.linger === true
+        root._lingerDesired = -1
+        root.actionStatus = root.linger ? "Mounts at boot" : "Mounts after login"
+      }
+      actionStatusTimer.restart()
+      root.refresh()
     }
   }
 }
