@@ -13,7 +13,7 @@ Click the cloud icon on the bar.
 
 ## 2. Authenticate
 
-Click **Personal Microsoft account** or **Work or school**. Finish sign-in in the browser. The panel comes back, names the remote from the account domain (`you@example.com` → `example-com`), and mounts it at `~/onedrive/<name>`.
+Click **Personal Microsoft account** or **Work or school**. Finish sign-in in the browser. The panel comes back, names the remote from the account domain (`omarchy@hey.com` → `hey-com`), and mounts it at `~/onedrive/<name>`.
 
 ## 3. Open in Files or Terminal
 

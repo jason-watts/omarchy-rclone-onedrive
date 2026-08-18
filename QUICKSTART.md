@@ -31,7 +31,7 @@ omarchy-shell jason.rclone-onedrive refresh
 1. Click **Personal Microsoft account** or **Work or school**.
 2. A browser tab should open on `login.microsoftonline.com/consumers` (personal) or `/organizations` (work).
 3. Finish Microsoft login. The panel closes while the browser is up, then opens again after Microsoft confirms.
-4. The panel names the remote from the account domain (`example.com` → `example-com`), creates `~/onedrive/<name>`, and switches to the status view.
+4. The panel names the remote from the account domain (`omarchy@hey.com` → `hey-com`), creates `~/onedrive/<name>`, and switches to the status view.
 
 Keys: `j`/`k` move, `Enter` starts sign-in on the highlighted account, `Esc` closes.
 
@@ -56,7 +56,7 @@ In the panel:
 
 | Piece | Where |
 |---|---|
-| rclone remote | signed-in account domain (`example.com` → `example-com`) in `~/.config/rclone/rclone.conf` |
+| rclone remote | signed-in account domain (`omarchy@hey.com` → `hey-com`) in `~/.config/rclone/rclone.conf` |
 | Mount | `~/onedrive/<name>` |
 | systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
 | RC | `http://127.0.0.1:5572` |
