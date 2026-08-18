@@ -154,6 +154,8 @@ def resolve(args: argparse.Namespace) -> argparse.Namespace:
             if not remote or src.rstrip(":") == remote:
                 args.mount = target
                 break
+        if not args.mount and remote:
+            args.mount = str(Path.home() / "onedrive" / remote)
     if not args.unit:
         args.unit, args.unit_scope = match_unit(remote, str(args.mount or ""))
     else:

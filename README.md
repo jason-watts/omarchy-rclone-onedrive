@@ -24,7 +24,7 @@ If rclone or an OneDrive remote is missing, the panel is a wizard instead of the
 1. Choose **Personal Microsoft account**, **Work or school**, or **SharePoint library**.
 2. Click **Sign in with Microsoft** (or press `L`).
 3. Finish login in the browser. Personal uses `login.microsoftonline.com/consumers` so you do not land on a work tenant by mistake. Work uses `/organizations`. The panel closes while the browser is up, then opens again after Microsoft confirms.
-4. The remote is named from the signed-in domain (dots become hyphens). The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/OneDrive`.
+4. The remote is named from the signed-in domain (dots become hyphens). The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/onedrive/<name>`.
 
 `omarchy-shell jason.rclone-onedrive setup` starts the same flow. If the token later expires, the panel offers **Sign in again**.
 
@@ -75,7 +75,7 @@ Leave the remote, mount, and unit blank to auto-detect the first OneDrive rclone
 
 ```bash
 omarchy bar set jason.rclone-onedrive remote mydrive --json
-omarchy bar set jason.rclone-onedrive mountPath /home/you/OneDrive --json
+omarchy bar set jason.rclone-onedrive mountPath /home/you/onedrive/philotic-net --json
 omarchy bar set jason.rclone-onedrive unit rclone-onedrive.service --json
 omarchy bar set jason.rclone-onedrive rcUrl http://127.0.0.1:5572 --json
 ```

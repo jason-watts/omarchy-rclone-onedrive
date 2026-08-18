@@ -310,6 +310,20 @@ def sanitize_remote(name: str) -> str:
     return cleaned.strip("-_")
 
 
+def default_mount(remote: str) -> str:
+    name = sanitize_remote(remote) or "onedrive"
+    return str(Path.home() / "onedrive" / name)
+
+
+def resolve_mount(explicit: str, remote: str) -> str:
+    if explicit:
+        return str(Path(explicit).expanduser())
+    found = find_mount(remote) if remote else ""
+    if found:
+        return found
+    return default_mount(remote)
+
+
 def remote_from_email(email: str, taken: set[str]) -> str:
     if "@" not in (email or ""):
         return ""
@@ -609,6 +623,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
 
 def finish_mount(binary: str, remote: str, account: str, region: str, token: str, mount: str, rc: str) -> int:
+    Path(mount).mkdir(parents=True, exist_ok=True)
     error = create_remote(binary, remote, account, region, token)
     if error:
         return fail(error)
@@ -644,8 +659,6 @@ def cmd_setup(args: argparse.Namespace) -> int:
     account = args.account
     region = args.region or "global"
     remotes = existing_remotes(binary)
-    mount = str(Path(args.mount or (Path.home() / "OneDrive")).expanduser())
-    Path(mount).mkdir(parents=True, exist_ok=True)
     ends = endpoints(account, region)
     token, error = authorize(binary, ends["auth_url"], ends["token_url"])
     if error:
@@ -655,6 +668,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
         remote = sanitize_remote(args.remote or "")
         if not remote or remote not in remotes:
             return fail("No existing remote to reconnect")
+        mount = resolve_mount(args.mount, remote)
+        Path(mount).mkdir(parents=True, exist_ok=True)
         unit = f"rclone-{remote}.service"
         stop_user_unit(unit, mount)
         proc = subprocess.run(
@@ -690,6 +705,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     remote = remote_from_email(email_from_token_blob(token), remotes)
     if not remote:
         return fail("Microsoft did not return an email for this account")
+    mount = resolve_mount(args.mount, remote)
     emit_line({"ok": True, "action": "setup", "phase": "mounting", "remote": remote})
     return finish_mount(binary, remote, account, region, token, mount, args.rc)
 

@@ -8,7 +8,7 @@ path to walk the **plugin wizard** as if you had never configured OneDrive.
 ```bash
 rclone listremotes
 systemctl --user is-active rclone-onedrive.service
-findmnt ~/OneDrive
+findmnt ~/onedrive/philotic-net
 omarchy-shell jason.rclone-onedrive status
 ```
 
@@ -16,7 +16,7 @@ You want:
 
 - no remotes
 - user unit inactive / missing
-- `~/OneDrive` not mounted
+- `~/onedrive/<remote>` not mounted
 - status: `Needs setup`
 
 If a remote or mount is still there, skip to [Reset and try again](#reset-and-try-again).
@@ -56,26 +56,26 @@ Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `E
 
 ```bash
 rclone listremotes          # expect the signed-in domain, e.g. philotic-net:
-findmnt ~/OneDrive          # expect that name as fuse.rclone
+findmnt ~/onedrive/philotic-net          # expect that name as fuse.rclone
 systemctl --user is-active "rclone-<name>.service"   # active
-/bin/ls ~/OneDrive | head
+/bin/ls ~/onedrive/philotic-net | head
 omarchy-shell jason.rclone-onedrive status           # Connected
 ```
 
 In the panel:
 
 - hero is Connected, toggle is on
-- Mount is `/home/jason/OneDrive`
+- Mount is `/home/jason/onedrive/philotic-net`
 - the folder and terminal icons in the hero open the mount
 - `p` or the toggle stops and starts the mount
 - At the bottom, **Mount at boot** (or `b`) turns on `loginctl linger` so the user unit starts before login
 - **Remove remote** unmounts, deletes the user unit, and removes that rclone remote. Cloud files stay put.
 
-If a terminal was already `cd`’d into `~/OneDrive` before a remount:
+If a terminal was already `cd`’d into `~/onedrive/philotic-net` before a remount:
 
 ```bash
 cd ~
-/bin/ls ~/OneDrive
+/bin/ls ~/onedrive/philotic-net
 ```
 
 A leftover FUSE handle prints `Transport endpoint is not connected`.
@@ -85,7 +85,7 @@ A leftover FUSE handle prints `Transport endpoint is not connected`.
 | Piece | Where |
 |---|---|
 | rclone remote | the signed-in account domain (`philotic.net` → `philotic-net`) in `~/.config/rclone/rclone.conf` |
-| Mount | `~/OneDrive` |
+| Mount | `~/onedrive/<name>` |
 | systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
 | RC | `http://127.0.0.1:5572` |
 
@@ -96,7 +96,7 @@ This is **not** the old system unit `rclone-philotic.service` or
 
 ```bash
 systemctl --user disable --now rclone-onedrive.service
-fusermount3 -uz "$HOME/OneDrive" || true
+fusermount3 -uz "$HOME/onedrive/philotic-net" || true
 rm -f "$HOME/.config/systemd/user/rclone-onedrive.service"
 systemctl --user daemon-reload
 rclone config delete onedrive
