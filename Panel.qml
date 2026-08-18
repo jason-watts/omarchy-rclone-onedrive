@@ -55,12 +55,14 @@ Panel {
     { id: "sharepoint", label: "SharePoint library", caption: "Same work login, then pick a library" }
   ]
   property int setupIndex: 0
+  readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
+  readonly property string setupRemoteHint: store.setupAccount === "personal" ? "home" : "work"
 
   onHeaderActionCountChanged: clampHeaderIndex()
 
   function ensureCursor() {
     if (root.showSetup) {
-      if (focusSection !== "setup" && focusSection !== "setupGo" && focusSection !== "header")
+      if (focusSection !== "setup" && focusSection !== "setupName" && focusSection !== "setupGo" && focusSection !== "header")
         focusSection = "setup"
       if (setupIndex < 0) setupIndex = 0
       if (setupIndex >= setupAccounts.length) setupIndex = setupAccounts.length - 1
@@ -134,11 +136,29 @@ Panel {
         setupIndex += 1
         return
       }
-      if (dy > 0) focusSection = "setupGo"
+      if (dy > 0) {
+        if (root.setupAsksName) focusSetupName()
+        else focusSection = "setupGo"
+      }
+      return
+    }
+    if (focusSection === "setupName") {
+      if (dy < 0) {
+        blurSetupName()
+        focusSection = "setup"
+        return
+      }
+      if (dy > 0) {
+        blurSetupName()
+        focusSection = "setupGo"
+      }
       return
     }
     if (focusSection === "setupGo") {
-      if (dy < 0) focusSection = "setup"
+      if (dy < 0) {
+        if (root.setupAsksName) focusSetupName()
+        else focusSection = "setup"
+      }
       return
     }
     if (focusSection === "files") {
@@ -177,6 +197,7 @@ Panel {
       else if (root.showSetup) focusSection = "setup"
     } else if (focusSection === "setup") {
       store.setupAccount = setupAccounts[setupIndex].id
+    } else if (focusSection === "setupName") {
       root.runSetupAction()
     } else if (focusSection === "setupGo") {
       root.runSetupAction()
@@ -228,12 +249,43 @@ Panel {
     store.refreshAbout()
   }
 
+  function sanitizedSetupRemote() {
+    return String(store.setupRemote || "").replace(/[^A-Za-z0-9_-]/g, "")
+  }
+
   function runSetupAction() {
     if (store.busy) return
-    if (!store.rcloneInstalled) store.runSetup("install-rclone")
-    else if (store.needsAuth && !store.needsSetup) store.runSetup("reconnect")
-    else if (store.needsMount && !store.needsSetup) store.runSetup("setup")
-    else store.runSetup("setup")
+    if (!store.rcloneInstalled) {
+      store.runSetup("install-rclone")
+      return
+    }
+    if (store.needsAuth && !store.needsSetup) {
+      store.runSetup("reconnect")
+      return
+    }
+    if (root.setupAsksName) {
+      var name = sanitizedSetupRemote()
+      if (name === "") {
+        store.lastError = "Give this remote a name"
+        store.actionStatus = ""
+        focusSetupName()
+        return
+      }
+      store.setupRemote = name
+    }
+    store.runSetup("setup")
+  }
+
+  function focusSetupName() {
+    cursorActive = true
+    focusSection = "setupName"
+    Qt.callLater(function() {
+      if (setupNameField) setupNameField.forceActiveFocus()
+    })
+  }
+
+  function blurSetupName() {
+    if (keyCatcher) keyCatcher.forceActiveFocus()
   }
 
   function setSetupCursor(index) {
@@ -326,6 +378,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: setupNameField.activeFocus
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
@@ -453,6 +506,56 @@ Panel {
                 width: parent.width
                 account: modelData
                 rowIndex: index
+              }
+            }
+
+            Column {
+              visible: root.setupAsksName
+              width: parent.width
+              spacing: Style.space(4)
+
+              PanelSectionHeader {
+                text: "REMOTE NAME"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              TextField {
+                id: setupNameField
+                width: parent.width
+                text: store.setupRemote
+                placeholderText: root.setupRemoteHint
+                foreground: root.foreground
+                font.family: root.fontFamily
+                hasCursor: root.cursorActive && root.focusSection === "setupName"
+                validator: RegularExpressionValidator { regularExpression: /[A-Za-z0-9_-]*/ }
+                onTextChanged: store.setupRemote = text
+                onActiveFocusChanged: {
+                  if (activeFocus) {
+                    root.cursorActive = true
+                    root.focusSection = "setupName"
+                  }
+                }
+                onAccepted: root.runSetupAction()
+                Keys.onDownPressed: {
+                  root.blurSetupName()
+                  root.focusSection = "setupGo"
+                }
+                Keys.onUpPressed: {
+                  root.blurSetupName()
+                  root.cursorActive = true
+                  root.focusSection = "setup"
+                }
+                Keys.onEscapePressed: root.close()
+              }
+
+              Text {
+                width: parent.width
+                text: "rclone remote name — letters, numbers, hyphen. Not the folder."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
               }
             }
 
@@ -673,10 +776,7 @@ Panel {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onEntered: root.setSetupCursor(choiceRow.rowIndex)
-      onClicked: {
-        root.setSetupCursor(choiceRow.rowIndex)
-        root.runSetupAction()
-      }
+      onClicked: root.setSetupCursor(choiceRow.rowIndex)
     }
 
     RowLayout {

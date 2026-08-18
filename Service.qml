@@ -33,6 +33,7 @@ Item {
   property bool needsMount: false
   property bool needsAuth: false
   property string setupAccount: "personal"
+  property string setupRemote: ""
   property bool linger: false
   property string unitScope: "user"
   property bool refreshing: false
@@ -269,13 +270,13 @@ Item {
       setupProcess.command = ["/usr/bin/python3", setupHelperPath, "install-rclone"]
     } else if (kind === "reconnect") {
       actionStatus = "Complete sign-in in the browser…"
-      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || "onedrive")]
+      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || setupRemote)]
     } else {
       actionStatus = "Complete sign-in in the browser…"
       setupProcess.command = [
         "/usr/bin/python3", setupHelperPath, "setup",
         "--account", setupAccount,
-        "--remote", String(setting("remote", "") || "onedrive"),
+        "--remote", String(setupRemote || setting("remote", "")),
         "--mount", String(setting("mountPath", "") || "")
       ]
     }

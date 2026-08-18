@@ -293,7 +293,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return fail("rclone is not installed")
     account = args.account
     region = args.region or "global"
-    remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "onedrive") or "onedrive"
+    remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
+    if not remote:
+        return fail("Give this remote a name")
     mount = str(Path(args.mount or (Path.home() / "OneDrive")).expanduser())
     if remote in existing_remotes(binary) and not args.reconnect:
         return fail(f"rclone remote {remote} already exists")
@@ -388,7 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--account", default="personal", choices=["personal", "business", "sharepoint"])
     parser.add_argument("--region", default="global")
-    parser.add_argument("--remote", default="onedrive")
+    parser.add_argument("--remote", default="")
     parser.add_argument("--mount", default="")
     parser.add_argument("--rc", default="http://127.0.0.1:5572")
     parser.add_argument("--reconnect", action="store_true")

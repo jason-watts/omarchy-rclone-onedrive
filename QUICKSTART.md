@@ -48,14 +48,14 @@ Then click the icon again.
 4. The panel says **Waiting for the browser…**, then switches to the
    status view.
 
-Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `Esc` closes.
+Keys if you prefer the keyboard: `j`/`k` move, type a remote name, `Enter` or `L` starts sign-in, `Esc` closes.
 
 ## 3. Check that it worked
 
 ```bash
-rclone listremotes          # expect: onedrive:
-findmnt ~/OneDrive          # expect: onedrive: fuse.rclone
-systemctl --user is-active rclone-onedrive.service   # active
+rclone listremotes          # expect the name you typed
+findmnt ~/OneDrive          # expect that name as fuse.rclone
+systemctl --user is-active "rclone-<name>.service"   # active
 /bin/ls ~/OneDrive | head
 omarchy-shell jason.rclone-onedrive status           # Connected
 ```
@@ -81,9 +81,9 @@ A leftover FUSE handle prints `Transport endpoint is not connected`.
 
 | Piece | Where |
 |---|---|
-| rclone remote | `onedrive` in `~/.config/rclone/rclone.conf` |
+| rclone remote | the name you typed, in `~/.config/rclone/rclone.conf` |
 | Mount | `~/OneDrive` |
-| systemd unit | `~/.config/systemd/user/rclone-onedrive.service` |
+| systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
 | RC | `http://127.0.0.1:5572` |
 
 This is **not** the old system unit `rclone-philotic.service` or
