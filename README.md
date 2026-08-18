@@ -10,7 +10,7 @@ This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugi
 
 - Bar icon: 2025 OneDrive S-wave cloud, themed to the shell. Bright when the mount is healthy, dim when stopped, urgent when failed, stale, or needs reauth.
 - Panel: state, uptime, restarts, quota, cache, mount path, in-flight transfers, recent VFS-cache files.
-- Open the mount in Files (Nautilus) or a terminal already `cd`'d there.
+- Open the mount from the hero toolbar: Files (Nautilus) or a terminal already `cd`'d there.
 - Start / stop / restart the systemd unit. User units use `systemctl --user`. System units go through `pkexec`.
 - Desktop notification when the mount drops or comes back (not for a user-initiated stop).
 - First-time setup: pick Personal / Work or school / SharePoint. The plugin signs in at the matching Microsoft endpoint (`/consumers` vs `/organizations`), creates the rclone remote, and starts a user systemd mount.
@@ -83,6 +83,7 @@ omarchy bar set jason.rclone-onedrive rcUrl http://127.0.0.1:5572 --json
 ## Keys
 
 - `j` / `k` move
+- `h` / `l` move across the hero actions
 - `Enter` activate
 - `o` open in Files
 - `t` open in Terminal

@@ -36,7 +36,16 @@ Panel {
   readonly property color iconColor: store.alarming ? urgent : (store.active ? foreground : dim)
   readonly property color barIconColor: store.alarming ? urgent : (store.active ? barForeground : Qt.darker(barForeground, 1.55))
   readonly property string toggleHint: store.active ? "Stop mount" : "Start mount"
-  readonly property bool headerHasCursor: cursorActive && focusSection === "header"
+  property int headerIndex: 0
+  readonly property bool canOpenMount: store.mountPath !== ""
+  readonly property bool canToggleMount: !store.needsSetup
+  readonly property int filesHeaderIndex: canOpenMount ? 0 : -1
+  readonly property int termHeaderIndex: canOpenMount ? 1 : -1
+  readonly property int toggleHeaderIndex: canToggleMount ? (canOpenMount ? 2 : 0) : -1
+  readonly property int headerActionCount: (canOpenMount ? 2 : 0) + (canToggleMount ? 1 : 0)
+  readonly property bool filesHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === filesHeaderIndex
+  readonly property bool termHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === termHeaderIndex
+  readonly property bool toggleHeaderHasCursor: cursorActive && focusSection === "header" && headerIndex === toggleHeaderIndex
   readonly property var displayFiles: store.transferring.length > 0 ? store.transferring : store.files
   readonly property bool showingTransfers: store.transferring.length > 0
   readonly property bool showSetup: store.needsSetup || store.needsAuth || store.needsMount || !store.rcloneInstalled
@@ -46,6 +55,8 @@ Panel {
     { id: "sharepoint", label: "SharePoint library", caption: "Same work login, then pick a library" }
   ]
   property int setupIndex: 0
+
+  onHeaderActionCountChanged: clampHeaderIndex()
 
   function ensureCursor() {
     if (root.showSetup) {
@@ -60,21 +71,38 @@ Panel {
       fileIndex = 0
       return
     }
-    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "openFiles" && focusSection !== "openTerm" && focusSection !== "linger")
+    if (focusSection !== "files" && focusSection !== "header" && focusSection !== "linger")
       focusSection = "files"
     if (fileIndex >= displayFiles.length) fileIndex = Math.max(0, displayFiles.length - 1)
     if (fileIndex < 0) fileIndex = 0
   }
 
+  function clampHeaderIndex() {
+    var max = Math.max(0, headerActionCount - 1)
+    if (headerIndex > max) headerIndex = max
+    if (headerIndex < 0) headerIndex = 0
+  }
+
+  function selectHeaderByDelta(delta) {
+    headerIndex = Math.max(0, Math.min(headerActionCount - 1, headerIndex + delta))
+  }
+
   function moveCursor(dx, dy) {
     cursorActive = true
     ensureCursor()
+    if (dx !== 0 && focusSection === "header") {
+      selectHeaderByDelta(dx)
+      return
+    }
     if (dy === 0) return
     if (focusSection === "header") {
       if (dy > 0) {
         if (root.showSetup) focusSection = "setup"
-        else if (store.mountPath !== "") focusSection = "openFiles"
-        else {
+        else if (displayFiles.length > 0) {
+          focusSection = "files"
+          fileIndex = 0
+          scrollCursorIntoView()
+        } else {
           focusSection = "linger"
           scrollCursorIntoView()
         }
@@ -87,8 +115,6 @@ Panel {
           focusSection = "files"
           fileIndex = displayFiles.length - 1
           scrollCursorIntoView()
-        } else if (store.mountPath !== "") {
-          focusSection = "openTerm"
         } else {
           setHeaderCursor()
         }
@@ -115,34 +141,9 @@ Panel {
       if (dy < 0) focusSection = "setup"
       return
     }
-    if (focusSection === "openFiles") {
-      if (dy < 0) {
-        setHeaderCursor()
-        return
-      }
-      if (dy > 0) focusSection = "openTerm"
-      return
-    }
-    if (focusSection === "openTerm") {
-      if (dy < 0) {
-        focusSection = "openFiles"
-        return
-      }
-      if (dy > 0 && displayFiles.length > 0) {
-        focusSection = "files"
-        fileIndex = 0
-        scrollCursorIntoView()
-        return
-      }
-      if (dy > 0) {
-        focusSection = "linger"
-        scrollCursorIntoView()
-      }
-      return
-    }
     if (focusSection === "files") {
       if (dy < 0 && fileIndex === 0) {
-        focusSection = "openTerm"
+        setHeaderCursor()
         return
       }
       if (dy > 0 && fileIndex === displayFiles.length - 1) {
@@ -155,9 +156,11 @@ Panel {
     }
   }
 
-  function setHeaderCursor() {
+  function setHeaderCursor(index) {
     cursorActive = true
     focusSection = "header"
+    if (index !== undefined && index >= 0) headerIndex = index
+    clampHeaderIndex()
     if (panelFlick) panelFlick.contentY = 0
   }
 
@@ -168,8 +171,10 @@ Panel {
   function activateCursor() {
     ensureCursor()
     if (focusSection === "header") {
-      if (root.showSetup) focusSection = "setup"
-      else toggleRunning()
+      if (headerIndex === filesHeaderIndex) store.openInFiles()
+      else if (headerIndex === termHeaderIndex) openTerminal()
+      else if (headerIndex === toggleHeaderIndex) toggleRunning()
+      else if (root.showSetup) focusSection = "setup"
     } else if (focusSection === "setup") {
       store.setupAccount = setupAccounts[setupIndex].id
       root.runSetupAction()
@@ -177,9 +182,7 @@ Panel {
       root.runSetupAction()
     } else if (focusSection === "linger") {
       store.toggleLinger()
-    } else if (focusSection === "openFiles") store.openInFiles()
-    else if (focusSection === "openTerm") openTerminal()
-    else if (focusSection === "files") store.openFile(selectedFile())
+    } else if (focusSection === "files") store.openFile(selectedFile())
   }
 
   function selectedFile() {
@@ -192,16 +195,6 @@ Panel {
     focusSection = "files"
     fileIndex = index
     scrollCursorIntoView()
-  }
-
-  function setOpenFilesCursor() {
-    cursorActive = true
-    focusSection = "openFiles"
-  }
-
-  function setOpenTermCursor() {
-    cursorActive = true
-    focusSection = "openTerm"
   }
 
   function scrollItemIntoView(item) {
@@ -369,8 +362,6 @@ Panel {
             id: header
             width: parent.width
             implicitHeight: hero.implicitHeight
-            readonly property bool ringVisible: root.headerHasCursor
-            function focusHero() { root.setHeaderCursor() }
 
             PanelHero {
               id: hero
@@ -388,20 +379,55 @@ Panel {
                 }
               }
               trailingControl: Component {
-                ToggleSwitch {
-                  id: powerSwitch
-                  visible: !store.needsSetup
-                  checked: store.active
-                  busy: store.busy
-                  hasCursor: header.ringVisible
-                  foreground: hero.foreground
-                  onHovered: function(on) { if (on) header.focusHero() }
-                  onToggled: root.toggleRunning()
+                Row {
+                  spacing: Style.space(8)
 
-                  PanelToolTip {
-                    visible: powerSwitch.containsMouse
-                    text: root.toggleHint
+                  Button {
+                    visible: root.canOpenMount
+                    iconText: "󰉋"
+                    tooltipText: "Open in Files"
+                    foreground: hero.foreground
                     fontFamily: hero.fontFamily
+                    iconSize: Style.font.subtitle * 1.5
+                    horizontalPadding: Style.space(5)
+                    verticalPadding: Style.space(2)
+                    hasCursor: root.filesHeaderHasCursor
+                    anchors.verticalCenter: parent.verticalCenter
+                    onHovered: function(on) { if (on) root.setHeaderCursor(root.filesHeaderIndex) }
+                    onClicked: store.openInFiles()
+                  }
+
+                  Button {
+                    visible: root.canOpenMount
+                    iconText: "󰆍"
+                    tooltipText: "Open in Terminal"
+                    foreground: hero.foreground
+                    fontFamily: hero.fontFamily
+                    iconSize: Style.font.subtitle * 1.5
+                    horizontalPadding: Style.space(5)
+                    verticalPadding: Style.space(2)
+                    hasCursor: root.termHeaderHasCursor
+                    anchors.verticalCenter: parent.verticalCenter
+                    onHovered: function(on) { if (on) root.setHeaderCursor(root.termHeaderIndex) }
+                    onClicked: root.openTerminal()
+                  }
+
+                  ToggleSwitch {
+                    id: powerSwitch
+                    visible: root.canToggleMount
+                    checked: store.active
+                    busy: store.busy
+                    hasCursor: root.toggleHeaderHasCursor
+                    foreground: hero.foreground
+                    anchors.verticalCenter: parent.verticalCenter
+                    onHovered: function(on) { if (on) root.setHeaderCursor(root.toggleHeaderIndex) }
+                    onToggled: root.toggleRunning()
+
+                    PanelToolTip {
+                      visible: powerSwitch.containsMouse
+                      text: root.toggleHint
+                      fontFamily: hero.fontFamily
+                    }
                   }
                 }
               }
@@ -482,32 +508,6 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
-          }
-
-          Column {
-            visible: !store.needsSetup && store.mountPath !== ""
-            width: parent.width
-            spacing: Style.space(6)
-
-            OpenTargetRow {
-              width: parent.width
-              section: "openFiles"
-              iconText: "󰉋"
-              label: "Open in Files"
-              caption: store.mountPath
-              onActivate: store.openInFiles()
-              onHover: root.setOpenFilesCursor()
-            }
-
-            OpenTargetRow {
-              width: parent.width
-              section: "openTerm"
-              iconText: "󰆍"
-              label: "Open in Terminal"
-              caption: store.mountPath
-              onActivate: root.openTerminal()
-              onHover: root.setOpenTermCursor()
-            }
           }
 
           PanelSeparator {
@@ -772,67 +772,6 @@ Panel {
           text: store.busy
             ? "Waiting for the browser…"
             : "Opens the correct Microsoft login, then starts the mount"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
-        }
-      }
-    }
-  }
-
-  component OpenTargetRow: CursorSurface {
-    id: openRow
-    property string section: ""
-    property string iconText: ""
-    property string label: ""
-    property string caption: ""
-    signal activate()
-    signal hover()
-
-    hasCursor: root.cursorActive && root.focusSection === section
-    foreground: root.foreground
-    implicitHeight: openContent.implicitHeight + Style.spacing.rowPaddingX
-
-    MouseArea {
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onEntered: openRow.hover()
-      onClicked: openRow.activate()
-    }
-
-    RowLayout {
-      id: openContent
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      anchors.leftMargin: Style.space(10)
-      anchors.rightMargin: Style.space(10)
-      spacing: Style.space(8)
-
-      Text {
-        text: openRow.iconText
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.icon
-        Layout.alignment: Qt.AlignVCenter
-      }
-
-      ColumnLayout {
-        Layout.fillWidth: true
-        spacing: Style.space(1)
-        Text {
-          Layout.fillWidth: true
-          text: openRow.label
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          elide: Text.ElideRight
-        }
-        Text {
-          Layout.fillWidth: true
-          text: openRow.caption
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
