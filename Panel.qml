@@ -332,6 +332,10 @@ Panel {
     cursorActive = true
     focusSection = "setup"
     setupIndex = index
+  }
+
+  function selectSetupAccount(index) {
+    setSetupCursor(index)
     store.setupAccount = setupAccounts[index].id
   }
 
@@ -913,7 +917,7 @@ Panel {
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
       onEntered: root.setSetupCursor(choiceRow.rowIndex)
-      onClicked: root.setSetupCursor(choiceRow.rowIndex)
+      onClicked: root.selectSetupAccount(choiceRow.rowIndex)
     }
 
     RowLayout {
