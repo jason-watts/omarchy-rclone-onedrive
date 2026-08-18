@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "jason.rclone-onedrive",
+  "name": "rclone OneDrive",
+  "version": "1.0.0",
+  "author": "Jason Watts",
+  "license": "MIT",
+  "homepage": "https://github.com/jason-watts/omarchy-rclone-onedrive",
+  "description": "rclone OneDrive mount status, quota, transfers, and start/stop in the Omarchy bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "rclone OneDrive",
+    "description": "Show whether an rclone OneDrive mount is connected, plus quota and transfers.",
+    "category": "Files",
+    "aliases": ["onedrive", "rclone", "mount"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 15,
+      "aboutIntervalSec": 300,
+      "remote": "",
+      "mountPath": "",
+      "unit": "",
+      "rcUrl": "http://127.0.0.1:5572"
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 5,
+        "max": 3600,
+        "step": 5,
+        "defaultValue": 15
+      },
+      {
+        "key": "aboutIntervalSec",
+        "type": "integer",
+        "label": "Quota refresh interval (seconds)",
+        "min": 60,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 300
+      },
+      {
+        "key": "remote",
+        "type": "string",
+        "label": "rclone remote name (blank = auto)",
+        "defaultValue": ""
+      },
+      {
+        "key": "mountPath",
+        "type": "string",
+        "label": "Mount path (blank = auto)",
+        "defaultValue": ""
+      },
+      {
+        "key": "unit",
+        "type": "string",
+        "label": "systemd unit (blank = auto)",
+        "defaultValue": ""
+      },
+      {
+        "key": "rcUrl",
+        "type": "string",
+        "label": "rclone RC URL",
+        "defaultValue": "http://127.0.0.1:5572"
+      }
+    ]
+  }
+}
