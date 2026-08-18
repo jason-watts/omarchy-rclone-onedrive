@@ -35,9 +35,14 @@ LOGIN_HOST = {
 }
 
 
-def emit(payload: dict) -> int:
+def emit_line(payload: dict) -> None:
     json.dump(payload, sys.stdout, separators=(",", ":"))
     sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def emit(payload: dict) -> int:
+    emit_line(payload)
     return 0 if payload.get("ok", True) else 1
 
 
@@ -561,6 +566,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     token, error = authorize(binary, ends["auth_url"], ends["token_url"])
     if error:
         return fail(error)
+    emit_line({"ok": True, "action": "setup", "phase": "authorized"})
     if args.reconnect:
         remote = sanitize_remote(args.remote or "")
         if not remote or remote not in remotes:
@@ -600,6 +606,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     remote = remote_from_email(email_from_token_blob(token), remotes)
     if not remote:
         return fail("Could not read the signed-in account domain")
+    emit_line({"ok": True, "action": "setup", "phase": "mounting", "remote": remote})
     return finish_mount(binary, remote, account, region, token, mount, args.rc)
 
 

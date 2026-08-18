@@ -45,6 +45,8 @@ Item {
   property string actionStatus: ""
   property string lastError: ""
 
+  signal panelRequested()
+
   property int _desired: -1
   property int _lingerDesired: -1
   readonly property bool active: _desired === -1 ? running : (_desired === 1)
@@ -283,19 +285,38 @@ Item {
     _setupError = ""
     if (kind === "install-rclone") {
       actionStatus = "Opening rclone install…"
-      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "install-rclone"]
+      setupProcess.command = ["/usr/bin/python3", "-u", setupHelperPath, "install-rclone"]
     } else if (kind === "reconnect") {
       actionStatus = "Complete sign-in in the browser…"
-      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || setupRemote)]
+      setupProcess.command = ["/usr/bin/python3", "-u", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || setupRemote)]
     } else {
       actionStatus = "Complete sign-in in the browser…"
       setupProcess.command = [
-        "/usr/bin/python3", setupHelperPath, "setup",
+        "/usr/bin/python3", "-u", setupHelperPath, "setup",
         "--account", setupAccount,
         "--mount", String(setting("mountPath", "") || "")
       ]
     }
     setupProcess.running = true
+  }
+
+  function applySetupLine(raw) {
+    var text = String(raw || "").trim()
+    if (text === "") return
+    _setupOutput = text
+    var parsed = Model.parseAction(text)
+    if (parsed.ok === false) return
+    if (parsed.phase === "authorized") {
+      lastError = ""
+      actionStatus = "Signed in. Creating mount…"
+      actionStatusTimer.stop()
+      panelRequested()
+    } else if (parsed.phase === "mounting") {
+      lastError = ""
+      actionStatus = parsed.remote ? "Creating " + parsed.remote + "…" : "Creating mount…"
+      actionStatusTimer.stop()
+      panelRequested()
+    }
   }
 
   function removeRemote() {
@@ -310,7 +331,7 @@ Item {
     _setupError = ""
     actionStatus = "Removing " + name + "…"
     setupProcess.command = [
-      "/usr/bin/python3", setupHelperPath, "remove",
+      "/usr/bin/python3", "-u", setupHelperPath, "remove",
       "--remote", name,
       "--mount", String(mountPath || ""),
       "--unit", String(unit || "")
@@ -443,7 +464,7 @@ Item {
     id: setupProcess
     running: false
     command: []
-    stdout: StdioCollector { id: setupStdout; waitForEnd: true; onStreamFinished: root._setupOutput = text }
+    stdout: SplitParser { onRead: function(data) { root.applySetupLine(data) } }
     stderr: StdioCollector { id: setupStderr; waitForEnd: true; onStreamFinished: root._setupError = text }
     onExited: function(exitCode) {
       if (root._setupCancelled) {
@@ -455,9 +476,10 @@ Item {
         }
         return
       }
-      var stdout = String(setupStdout.text || root._setupOutput || "")
+      var stdout = String(root._setupOutput || "")
       var stderr = String(setupStderr.text || root._setupError || "")
       var parsed = Model.parseAction(stdout)
+      if (parsed.action !== "remove") root.panelRequested()
       if (exitCode !== 0 || parsed.ok === false) {
         root.lastError = root.elide(parsed.error || stderr || stdout || "Setup failed")
         root.actionStatus = root.lastError

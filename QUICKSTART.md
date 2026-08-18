@@ -44,8 +44,9 @@ Then click the icon again.
 2. A browser tab should open on
    `login.microsoftonline.com/consumers` (not `/common`, not a quoted
    `localhost:53682/"`).
-3. Finish Microsoft login.
-4. The panel says **Waiting for the browser…**, names the remote from the
+3. Finish Microsoft login. The setup panel closes while the browser is up,
+   then opens again after Microsoft confirms.
+4. The panel says **Signed in. Creating mount…**, names the remote from the
    account domain (`philotic.net` → `philotic-net`), creates the mount, then
    switches to the status view. There is no rename step.
 

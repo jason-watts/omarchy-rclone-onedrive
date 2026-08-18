@@ -254,11 +254,11 @@ Panel {
       store.runSetup("install-rclone")
       return
     }
-    if (store.needsAuth && !store.needsSetup) {
-      store.runSetup("reconnect")
-      return
-    }
-    store.runSetup("setup")
+    // Exclusive layer-shell grab fights the Microsoft browser tab.
+    // Close now; Service reopens the panel after sign-in confirms.
+    var kind = (store.needsAuth && !store.needsSetup) ? "reconnect" : "setup"
+    root.close()
+    Qt.callLater(function() { store.runSetup(kind) })
   }
 
   function askRemoveRemote() {
@@ -330,6 +330,9 @@ Panel {
         root.focusSection = "setup"
         if (panelFlick) panelFlick.contentY = 0
       }
+    }
+    function onPanelRequested() {
+      Qt.callLater(function() { root.open() })
     }
   }
 
