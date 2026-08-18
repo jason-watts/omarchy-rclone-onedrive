@@ -11,15 +11,27 @@ This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugi
 - Open the mount in Files (Nautilus) or a terminal already `cd`'d there.
 - Start / stop / restart the systemd unit. User units use `systemctl --user`. System units go through `pkexec`.
 - Desktop notification when the mount drops or comes back (not for a user-initiated stop).
+- First-time setup: pick Personal / Work or school / SharePoint. The plugin signs in at the matching Microsoft endpoint (`/consumers` vs `/organizations`), creates the rclone remote, and starts a user systemd mount.
 
 The helper never walks the live FUSE mount. Recent files come from `~/.cache/rclone/vfs/<remote>` only. Quota (`rclone about`) runs when you open the panel and on a slow timer, not on every bar poll.
+
+## First-time setup
+
+If rclone or an OneDrive remote is missing, the panel is a wizard instead of the status view.
+
+1. Choose **Personal Microsoft account**, **Work or school**, or **SharePoint library**.
+2. Click **Sign in with Microsoft** (or press `L`).
+3. Finish login in the browser. Personal uses `login.microsoftonline.com/consumers` so you do not land on a work tenant by mistake. Work uses `/organizations`.
+4. The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/OneDrive`.
+
+`omarchy-shell jason.rclone-onedrive setup` starts the same flow. If the token later expires, the panel offers **Sign in again**.
 
 ## Requirements
 
 - Omarchy Quattro (`omarchy-shell` plugins)
 - Python 3
-- `rclone` with an OneDrive remote
-- A systemd unit that runs `rclone mount` (system or user)
+- `rclone` (the panel can launch `omarchy pkg add rclone` if it is missing)
+- Optional: an existing systemd unit. New setups create a user unit automatically.
 - Optional: rclone RC on `127.0.0.1:5572` for live transfer stats
 
 ## Install

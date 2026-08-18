@@ -39,8 +39,22 @@ Panel {
   readonly property bool headerHasCursor: cursorActive && focusSection === "header"
   readonly property var displayFiles: store.transferring.length > 0 ? store.transferring : store.files
   readonly property bool showingTransfers: store.transferring.length > 0
+  readonly property bool showSetup: store.needsSetup || store.needsAuth || store.needsMount || !store.rcloneInstalled
+  readonly property var setupAccounts: [
+    { id: "personal", label: "Personal Microsoft account", caption: "login.microsoftonline.com/consumers" },
+    { id: "business", label: "Work or school", caption: "login.microsoftonline.com/organizations" },
+    { id: "sharepoint", label: "SharePoint library", caption: "Same work login, then pick a library" }
+  ]
+  property int setupIndex: 0
 
   function ensureCursor() {
+    if (root.showSetup) {
+      if (focusSection !== "setup" && focusSection !== "setupGo" && focusSection !== "header")
+        focusSection = "setup"
+      if (setupIndex < 0) setupIndex = 0
+      if (setupIndex >= setupAccounts.length) setupIndex = setupAccounts.length - 1
+      return
+    }
     if (displayFiles.length === 0) {
       focusSection = "header"
       fileIndex = 0
@@ -57,7 +71,27 @@ Panel {
     ensureCursor()
     if (dy === 0) return
     if (focusSection === "header") {
-      if (dy > 0) focusSection = "openFiles"
+      if (dy > 0) focusSection = root.showSetup ? "setup" : "openFiles"
+      return
+    }
+    if (focusSection === "setup") {
+      if (dy < 0 && setupIndex === 0) {
+        setHeaderCursor()
+        return
+      }
+      if (dy < 0) {
+        setupIndex -= 1
+        return
+      }
+      if (dy > 0 && setupIndex < setupAccounts.length - 1) {
+        setupIndex += 1
+        return
+      }
+      if (dy > 0) focusSection = "setupGo"
+      return
+    }
+    if (focusSection === "setupGo") {
+      if (dy < 0) focusSection = "setup"
       return
     }
     if (focusSection === "openFiles") {
@@ -102,8 +136,14 @@ Panel {
 
   function activateCursor() {
     ensureCursor()
-    if (focusSection === "header") toggleRunning()
-    else if (focusSection === "openFiles") store.openInFiles()
+    if (focusSection === "header") {
+      if (root.showSetup) focusSection = "setup"
+      else toggleRunning()
+    } else if (focusSection === "setup") {
+      store.setupAccount = setupAccounts[setupIndex].id
+    } else if (focusSection === "setupGo") {
+      root.runSetupAction()
+    } else if (focusSection === "openFiles") store.openInFiles()
     else if (focusSection === "openTerm") openTerminal()
     else if (focusSection === "files") store.openFile(selectedFile())
   }
@@ -157,6 +197,21 @@ Panel {
     store.refreshAbout()
   }
 
+  function runSetupAction() {
+    if (store.busy) return
+    if (!store.rcloneInstalled) store.runSetup("install-rclone")
+    else if (store.needsAuth && !store.needsSetup) store.runSetup("reconnect")
+    else if (store.needsMount && !store.needsSetup) store.runSetup("setup")
+    else store.runSetup("setup")
+  }
+
+  function setSetupCursor(index) {
+    cursorActive = true
+    focusSection = "setup"
+    setupIndex = index
+    store.setupAccount = setupAccounts[index].id
+  }
+
   function openTerminal() {
     // Drop exclusive layer-shell keyboard before spawning a terminal.
     root.close()
@@ -196,6 +251,7 @@ Panel {
     function status(): string { return store.statusText }
     function files(): string { store.openInFiles(); return "ok" }
     function terminal(): string { root.openTerminal(); return "ok" }
+    function setup(): string { root.runSetupAction(); return "ok" }
   }
 
   BarIconButton {
@@ -251,6 +307,7 @@ Panel {
         else if (t === "o" || t === "O") store.openInFiles()
         else if (t === "t" || t === "T") root.openTerminal()
         else if (t === "p" || t === "P") root.toggleRunning()
+        else if (t === "l" || t === "L") root.runSetupAction()
       }
 
       Flickable {
@@ -280,8 +337,8 @@ Panel {
               id: hero
               width: parent.width
               title: "OneDrive"
-              meta: store.healthy ? root.heroPhraseText : store.statusText
-              detail: store.remote
+              meta: store.needsSetup ? "Set up rclone" : (store.healthy ? root.heroPhraseText : store.statusText)
+              detail: store.remote || (store.needsSetup ? "First-time setup" : "")
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconOpacity: store.active ? 1.0 : 0.5
@@ -294,6 +351,7 @@ Panel {
               trailingControl: Component {
                 ToggleSwitch {
                   id: powerSwitch
+                  visible: !store.needsSetup
                   checked: store.active
                   busy: store.busy
                   hasCursor: header.ringVisible
@@ -311,6 +369,33 @@ Panel {
             }
           }
 
+          Column {
+            visible: root.showSetup
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSectionHeader {
+              text: !store.rcloneInstalled ? "INSTALL" : (store.needsAuth && !store.needsSetup ? "SIGN IN AGAIN" : "MICROSOFT ACCOUNT")
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Repeater {
+              model: store.rcloneInstalled ? root.setupAccounts : []
+              SetupChoice {
+                required property var modelData
+                required property int index
+                width: parent.width
+                account: modelData
+                rowIndex: index
+              }
+            }
+
+            SetupGo {
+              width: parent.width
+            }
+          }
+
           Text {
             visible: store.actionStatus !== "" || store.lastError !== ""
             width: parent.width
@@ -322,6 +407,7 @@ Panel {
           }
 
           Column {
+            visible: !store.needsSetup
             width: parent.width
             spacing: Style.spacing.labelGap
             InfoPair { label: "State"; value: store.statusText }
@@ -341,6 +427,7 @@ Panel {
           }
 
           Text {
+            visible: !store.needsSetup && store.excludeNote !== ""
             width: parent.width
             text: store.excludeNote
             color: root.dim
@@ -359,6 +446,7 @@ Panel {
           }
 
           Column {
+            visible: !store.needsSetup && store.mountPath !== ""
             width: parent.width
             spacing: Style.space(6)
 
@@ -383,9 +471,13 @@ Panel {
             }
           }
 
-          PanelSeparator { foreground: root.foreground }
+          PanelSeparator {
+            visible: !store.needsSetup
+            foreground: root.foreground
+          }
 
           Column {
+            visible: !store.needsSetup
             width: parent.width
             spacing: Style.space(10)
 
@@ -458,6 +550,126 @@ Panel {
     PropertyAnimation {
       target: hero; property: "metaOpacity"
       to: 1.0; duration: 260; easing.type: Easing.InQuad
+    }
+  }
+
+  component SetupChoice: CursorSurface {
+    id: choiceRow
+    property var account: ({})
+    property int rowIndex: 0
+    readonly property bool selected: store.setupAccount === String(account.id || "")
+
+    hasCursor: root.cursorActive && root.focusSection === "setup" && root.setupIndex === rowIndex
+    foreground: root.foreground
+    implicitHeight: choiceBody.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.setSetupCursor(choiceRow.rowIndex)
+      onClicked: root.setSetupCursor(choiceRow.rowIndex)
+    }
+
+    RowLayout {
+      id: choiceBody
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        text: choiceRow.selected ? "●" : "○"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        Layout.alignment: Qt.AlignVCenter
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(1)
+        Text {
+          Layout.fillWidth: true
+          text: String(choiceRow.account.label || "")
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+        Text {
+          Layout.fillWidth: true
+          text: String(choiceRow.account.caption || "")
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+    }
+  }
+
+  component SetupGo: CursorSurface {
+    id: goRow
+    hasCursor: root.cursorActive && root.focusSection === "setupGo"
+    foreground: root.foreground
+    implicitHeight: goBody.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: store.busy ? Qt.ArrowCursor : Qt.PointingHandCursor
+      enabled: !store.busy
+      onEntered: {
+        root.cursorActive = true
+        root.focusSection = "setupGo"
+      }
+      onClicked: root.runSetupAction()
+    }
+
+    RowLayout {
+      id: goBody
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        text: "󰌋"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.icon
+        Layout.alignment: Qt.AlignVCenter
+      }
+
+      ColumnLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(1)
+        Text {
+          Layout.fillWidth: true
+          text: !store.rcloneInstalled
+            ? "Install rclone"
+            : (store.needsAuth && !store.needsSetup ? "Sign in again" : "Sign in with Microsoft")
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+        Text {
+          Layout.fillWidth: true
+          text: store.busy
+            ? "Waiting for the browser…"
+            : "Opens the correct Microsoft login, then starts the mount"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
     }
   }
 

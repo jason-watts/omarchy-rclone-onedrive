@@ -28,6 +28,10 @@ function defaultStatus() {
     excludeNote: "Personal Vault excluded",
     lastJournal: "",
     authHint: false,
+    rcloneInstalled: true,
+    needsSetup: false,
+    needsMount: false,
+    needsAuth: false,
     lastError: ""
   }
 }

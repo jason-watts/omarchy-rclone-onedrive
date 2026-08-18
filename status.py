@@ -191,7 +191,25 @@ def unix_timestamp_ms(value: str) -> int:
     return number * 1000
 
 
+def rclone_installed() -> bool:
+    found = shutil.which("rclone")
+    return bool(found or Path(RCLONE_BIN).is_file())
+
+
 def unit_status(unit: str) -> dict:
+    empty = {
+        "loaded": False,
+        "running": False,
+        "activeState": "inactive",
+        "subState": "",
+        "result": "",
+        "restarts": 0,
+        "startedMs": 0,
+        "startedText": "",
+        "error": "",
+    }
+    if not unit:
+        return empty
     code, stdout, stderr = run(
         [
             "systemctl",
@@ -350,6 +368,8 @@ def vfs_cache_rows(vfs_root: str, mount_path: str, limit: int) -> tuple[int, int
 
 
 def journal_hint(unit: str) -> tuple[str, bool]:
+    if not unit:
+        return "", False
     code, stdout, _stderr = run(
         ["journalctl", "-u", unit, "-n", "80", "--no-pager", "-o", "cat"],
         timeout=2.0,
@@ -406,7 +426,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         disk_cache = {}
 
     state = derive_state(unit, mounted, probe_ok, auth_hint)
-    status_text = {
+    has_remote = bool(args.remote)
+    installed = rclone_installed()
+    needs_setup = (not installed) or (not has_remote)
+    needs_mount = has_remote and not bool(args.unit) and not mounted
+    needs_auth = state == "unauthenticated"
+    if needs_setup and not has_remote:
+        status_text = "Needs setup"
+        if not installed:
+            status_text = "rclone missing"
+        state = "setup"
+    else:
+        status_text = {
         "healthy": "Connected",
         "stopped": "Mount stopped",
         "failed": "Mount failed",
@@ -452,6 +483,10 @@ def cmd_status(args: argparse.Namespace) -> int:
             ),
             "lastJournal": last_journal,
             "authHint": auth_hint,
+            "rcloneInstalled": installed,
+            "needsSetup": needs_setup,
+            "needsMount": needs_mount,
+            "needsAuth": needs_auth,
             "lastError": unit["error"],
         }
     )
@@ -471,6 +506,19 @@ def parse_about_json(raw: str) -> dict:
 
 
 def cmd_about(args: argparse.Namespace) -> int:
+    if not args.remote:
+        return emit(
+            {
+                "ok": False,
+                "authHint": False,
+                "error": "No OneDrive remote yet",
+                "usedBytes": 0,
+                "quotaBytes": 0,
+                "freeBytes": 0,
+                "trashedBytes": 0,
+                "quotaKnown": False,
+            }
+        )
     remote = args.remote if args.remote.endswith(":") else f"{args.remote}:"
     code, stdout, stderr = run(
         [rclone_bin(), "about", remote, "--json"], timeout=25.0

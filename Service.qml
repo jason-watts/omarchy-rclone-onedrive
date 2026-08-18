@@ -28,6 +28,11 @@ Item {
   property string excludeNote: "Personal Vault excluded"
   property string lastJournal: ""
   property bool authHint: false
+  property bool rcloneInstalled: true
+  property bool needsSetup: false
+  property bool needsMount: false
+  property bool needsAuth: false
+  property string setupAccount: "personal"
   property bool refreshing: false
   property bool aboutRefreshing: false
   property double usedBytes: 0
@@ -41,7 +46,8 @@ Item {
   readonly property bool active: _desired === -1 ? running : (_desired === 1)
   readonly property bool healthy: state === "healthy"
   readonly property bool alarming: Model.alarming(state)
-  readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running
+  readonly property bool busy: statusProcess.running || aboutProcess.running || controlProcess.running || setupProcess.running
+  readonly property string setupHelperPath: resolvedSetupHelper()
   readonly property string helperPath: resolvedHelper()
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 15, 5, 3600)
   readonly property int aboutIntervalSec: intSetting("aboutIntervalSec", 300, 60, 3600)
@@ -52,6 +58,8 @@ Item {
   property string _aboutError: ""
   property string _controlOutput: ""
   property string _controlError: ""
+  property string _setupOutput: ""
+  property string _setupError: ""
   property string _prevState: ""
   property bool _suppressNotify: false
 
@@ -68,14 +76,22 @@ Item {
     return n
   }
 
-  function resolvedHelper() {
-    var url = Qt.resolvedUrl("status.py").toString()
+  function resolvedUrl(name) {
+    var url = Qt.resolvedUrl(name).toString()
     if (url.indexOf("file://") === 0) {
       var path = url.substring(7)
       if (path.indexOf("//") === 0) path = path.substring(1)
       try { return decodeURIComponent(path) } catch (e) { return path }
     }
     return url
+  }
+
+  function resolvedHelper() {
+    return resolvedUrl("status.py")
+  }
+
+  function resolvedSetupHelper() {
+    return resolvedUrl("setup.py")
   }
 
   function helperArgs() {
@@ -143,6 +159,10 @@ Item {
     excludeNote = String(parsed.excludeNote || "Personal Vault excluded")
     lastJournal = String(parsed.lastJournal || "")
     authHint = parsed.authHint === true
+    rcloneInstalled = parsed.rcloneInstalled !== false
+    needsSetup = parsed.needsSetup === true
+    needsMount = parsed.needsMount === true
+    needsAuth = parsed.needsAuth === true
     if (_desired !== -1 && running === (_desired === 1)) _desired = -1
     if (_desired === -1) _suppressNotify = false
     lastError = parsed.lastError || ""
@@ -212,6 +232,28 @@ Item {
     var path = String(file.path || file.cachePath || "")
     if (path === "") return
     Quickshell.execDetached(["xdg-open", path])
+  }
+
+  function runSetup(kind) {
+    if (setupProcess.running || setupHelperPath === "") return
+    _setupOutput = ""
+    _setupError = ""
+    if (kind === "install-rclone") {
+      actionStatus = "Opening rclone install…"
+      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "install-rclone"]
+    } else if (kind === "reconnect") {
+      actionStatus = "Complete sign-in in the browser…"
+      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || "onedrive")]
+    } else {
+      actionStatus = "Complete sign-in in the browser…"
+      setupProcess.command = [
+        "/usr/bin/python3", setupHelperPath, "setup",
+        "--account", setupAccount,
+        "--remote", String(setting("remote", "") || "onedrive"),
+        "--mount", String(setting("mountPath", "") || "")
+      ]
+    }
+    setupProcess.running = true
   }
 
   function maybeNotify(prev, next) {
@@ -332,6 +374,34 @@ Item {
       settleTimer.ticks = 0
       settleTimer.restart()
       root.refresh()
+    }
+  }
+
+  Process {
+    id: setupProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: setupStdout; waitForEnd: true; onStreamFinished: root._setupOutput = text }
+    stderr: StdioCollector { id: setupStderr; waitForEnd: true; onStreamFinished: root._setupError = text }
+    onExited: function(exitCode) {
+      var stdout = String(setupStdout.text || root._setupOutput || "")
+      var stderr = String(setupStderr.text || root._setupError || "")
+      var parsed = Model.parseAction(stdout)
+      if (exitCode !== 0 || parsed.ok === false) {
+        root.lastError = root.elide(parsed.error || stderr || stdout || "Setup failed")
+        root.actionStatus = root.lastError
+      } else {
+        root.lastError = ""
+        root.actionStatus = parsed.action === "reconnect" ? "Signed in" : "OneDrive is ready"
+        if (parsed.remote) root.remote = String(parsed.remote)
+        if (parsed.mount) root.mountPath = String(parsed.mount)
+        if (parsed.unit) root.unit = String(parsed.unit)
+      }
+      actionStatusTimer.restart()
+      settleTimer.ticks = 0
+      settleTimer.restart()
+      root.refresh()
+      root.refreshAbout()
     }
   }
 }
