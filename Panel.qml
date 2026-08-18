@@ -55,10 +55,6 @@ Panel {
     { id: "sharepoint", label: "SharePoint library", caption: "Same work login, then pick a library" }
   ]
   property int setupIndex: 0
-  readonly property bool setupAsksName: store.needsSetup && store.rcloneInstalled && !store.needsAuth
-  readonly property string setupRemoteHint: store.setupPending
-    ? "edit if you want a different name"
-    : "filled after you sign in"
   readonly property real desiredPanelBody: header.implicitHeight + Style.space(12)
     + Math.min(middle.implicitHeight, Style.space(340))
     + (footer.visible ? Style.space(12) + footer.implicitHeight : 0)
@@ -67,7 +63,7 @@ Panel {
 
   function ensureCursor() {
     if (root.showSetup) {
-      if (focusSection !== "setup" && focusSection !== "setupName" && focusSection !== "setupGo" && focusSection !== "header")
+      if (focusSection !== "setup" && focusSection !== "setupGo" && focusSection !== "header")
         focusSection = "setup"
       if (setupIndex < 0) setupIndex = 0
       if (setupIndex >= setupAccounts.length) setupIndex = setupAccounts.length - 1
@@ -154,29 +150,11 @@ Panel {
         setupIndex += 1
         return
       }
-      if (dy > 0) {
-        if (root.setupAsksName) focusSetupName()
-        else focusSection = "setupGo"
-      }
-      return
-    }
-    if (focusSection === "setupName") {
-      if (dy < 0) {
-        blurSetupName()
-        focusSection = "setup"
-        return
-      }
-      if (dy > 0) {
-        blurSetupName()
-        focusSection = "setupGo"
-      }
+      if (dy > 0) focusSection = "setupGo"
       return
     }
     if (focusSection === "setupGo") {
-      if (dy < 0) {
-        if (root.setupAsksName) focusSetupName()
-        else focusSection = "setup"
-      }
+      if (dy < 0) focusSection = "setup"
       return
     }
     if (focusSection === "files") {
@@ -215,8 +193,6 @@ Panel {
       else if (root.showSetup) focusSection = "setup"
     } else if (focusSection === "setup") {
       store.setupAccount = setupAccounts[setupIndex].id
-    } else if (focusSection === "setupName") {
-      root.runSetupAction()
     } else if (focusSection === "setupGo") {
       root.runSetupAction()
     } else if (focusSection === "linger") {
@@ -273,17 +249,6 @@ Panel {
     store.refreshAbout()
   }
 
-  function sanitizedSetupRemote() {
-    var typed = setupNameField ? String(setupNameField.text || "") : ""
-    var stored = String(store.setupRemote || "")
-    return (typed || stored).toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9_-]/g, "")
-  }
-
-  function applySetupRemote(name) {
-    store.setupRemote = name
-    if (setupNameField && setupNameField.text !== name) setupNameField.text = name
-  }
-
   function runSetupAction() {
     if (!store.rcloneInstalled) {
       store.runSetup("install-rclone")
@@ -293,33 +258,7 @@ Panel {
       store.runSetup("reconnect")
       return
     }
-    if (root.setupAsksName) {
-      applySetupRemote(sanitizedSetupRemote())
-    }
-    if (store.setupPending) {
-      if (sanitizedSetupRemote() === "") {
-        store.lastError = "Give this remote a name"
-        store.actionStatus = ""
-        focusSetupName()
-        return
-      }
-      if (store.setupRunning) return
-      store.runSetup("setup")
-      return
-    }
-    store.runSetup("authorize")
-  }
-
-  function focusSetupName() {
-    cursorActive = true
-    focusSection = "setupName"
-    Qt.callLater(function() {
-      if (setupNameField) setupNameField.forceActiveFocus()
-    })
-  }
-
-  function blurSetupName() {
-    if (keyCatcher) keyCatcher.forceActiveFocus()
+    store.runSetup("setup")
   }
 
   function askRemoveRemote() {
@@ -352,8 +291,6 @@ Panel {
     if (store.setupAccount === next) return
     store.setupAccount = next
     store.cancelSetup()
-    store.discardPending()
-    store.setupRemote = ""
     store.actionStatus = ""
     store.lastError = ""
   }
@@ -393,11 +330,6 @@ Panel {
         root.focusSection = "setup"
         if (panelFlick) panelFlick.contentY = 0
       }
-    }
-    function onSetupPendingChanged() {
-      if (!store.setupPending) return
-      applySetupRemote(String(store.setupRemote || ""))
-      root.focusSetupName()
     }
   }
 
@@ -457,7 +389,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: setupNameField.activeFocus || removeConfirm.opened
+      blocked: removeConfirm.opened
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
@@ -591,57 +523,6 @@ Panel {
                 width: parent.width
                 account: modelData
                 rowIndex: index
-              }
-            }
-
-            Column {
-              visible: root.setupAsksName
-              width: parent.width
-              spacing: Style.space(4)
-
-              PanelSectionHeader {
-                text: "REMOTE NAME"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-              }
-
-              TextField {
-                id: setupNameField
-                width: parent.width
-                placeholderText: root.setupRemoteHint
-                foreground: root.foreground
-                font.family: root.fontFamily
-                hasCursor: root.cursorActive && root.focusSection === "setupName"
-                validator: RegularExpressionValidator { regularExpression: /[A-Za-z0-9_.-]*/ }
-                onTextChanged: store.setupRemote = text
-                onActiveFocusChanged: {
-                  if (activeFocus) {
-                    root.cursorActive = true
-                    root.focusSection = "setupName"
-                  }
-                }
-                onAccepted: root.runSetupAction()
-                Keys.onDownPressed: {
-                  root.blurSetupName()
-                  root.focusSection = "setupGo"
-                }
-                Keys.onUpPressed: {
-                  root.blurSetupName()
-                  root.cursorActive = true
-                  root.focusSection = "setup"
-                }
-                Keys.onEscapePressed: root.close()
-              }
-
-              Text {
-                width: parent.width
-                text: store.setupPending
-                  ? "Filled from the signed-in domain. Edit it if you want."
-                  : "After sign-in this becomes your account domain (philotic.net → philotic-net)."
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
               }
             }
 
@@ -1029,7 +910,7 @@ Panel {
             ? "Install rclone"
             : (store.needsAuth && !store.needsSetup
               ? "Sign in again"
-              : (store.setupPending ? "Create mount" : "Sign in with Microsoft"))
+              : "Sign in with Microsoft")
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -1037,11 +918,9 @@ Panel {
         }
         Text {
           Layout.fillWidth: true
-          text: store.setupRunning && !store.setupPending
+          text: store.setupRunning
             ? "Waiting for the browser…"
-            : (store.setupPending
-              ? "Creates rclone remote " + (store.setupRemote || "…") + " and mounts it"
-              : "Opens the Microsoft login, then fills the remote name")
+            : "Signs in, names the remote from the account domain, and mounts it"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

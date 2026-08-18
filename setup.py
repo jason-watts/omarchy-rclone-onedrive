@@ -2,8 +2,8 @@
 """First-run OneDrive setup for jason.rclone-onedrive.
 
 Walks rclone's non-interactive config protocol, signs in at the matching
-Microsoft endpoint (consumers vs organizations), then writes a user systemd
-mount unit. Never prints tokens.
+Microsoft endpoint (consumers vs organizations), names the remote from the
+account domain, and writes a user systemd mount unit. Never prints tokens.
 """
 
 from __future__ import annotations
@@ -243,31 +243,6 @@ def remote_from_email(email: str, taken: set[str]) -> str:
 def pending_path() -> Path:
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
     return runtime / "omarchy-rclone-onedrive-pending.json"
-
-
-def save_pending(payload: dict) -> None:
-    path = pending_path()
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    path.chmod(0o600)
-
-
-def load_pending() -> dict | None:
-    path = pending_path()
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    created = float(data.get("created") or 0)
-    if created and time.time() - created > 900:
-        clear_pending()
-        return None
-    if not data.get("token"):
-        return None
-    return data
 
 
 def clear_pending() -> None:
@@ -544,62 +519,50 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     )
 
 
+def finish_mount(binary: str, remote: str, account: str, region: str, token: str, mount: str, rc: str) -> int:
+    error = create_remote(binary, remote, account, region, token)
+    if error:
+        return fail(error)
+    unit, _path = write_user_unit(remote, mount, rc)
+    error = enable_user_unit(unit)
+    if error:
+        return fail(error, remote=remote, mount=mount, unit=unit)
+    for _ in range(8):
+        time.sleep(0.4)
+        check = subprocess.run(
+            ["findmnt", "-n", mount], capture_output=True, text=True, timeout=2
+        )
+        if check.returncode == 0:
+            break
+    return emit(
+        {
+            "ok": True,
+            "action": "setup",
+            "remote": remote,
+            "mount": mount,
+            "unit": unit,
+            "account": account,
+            "error": "",
+        }
+    )
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     binary = rclone_bin()
     if not binary:
         return fail("rclone is not installed")
+    clear_pending()
     account = args.account
     region = args.region or "global"
-    requested = sanitize_remote(args.remote or "")
     remotes = existing_remotes(binary)
-    if requested and requested in remotes and not args.reconnect:
-        return fail(f"rclone remote {requested} already exists")
     mount = str(Path(args.mount or (Path.home() / "OneDrive")).expanduser())
     Path(mount).mkdir(parents=True, exist_ok=True)
     ends = endpoints(account, region)
-    pending = None if args.reconnect else load_pending()
-    if pending:
-        token = str(pending.get("token") or "")
-        if not token:
-            clear_pending()
-            return fail("Sign-in expired. Sign in again.")
-        remote = requested or sanitize_remote(str(pending.get("suggestedRemote") or ""))
-        if not remote:
-            return fail("Give this remote a name")
-        if remote in remotes:
-            return fail(f"rclone remote {remote} already exists")
-        account = str(pending.get("account") or account)
-        region = str(pending.get("region") or region)
-        clear_pending()
-        error = create_remote(binary, remote, account, region, token)
-        if error:
-            return fail(error)
-        unit, _path = write_user_unit(remote, mount, args.rc)
-        error = enable_user_unit(unit)
-        if error:
-            return fail(error, remote=remote, mount=mount, unit=unit)
-        for _ in range(8):
-            time.sleep(0.4)
-            check = subprocess.run(
-                ["findmnt", "-n", mount], capture_output=True, text=True, timeout=2
-            )
-            if check.returncode == 0:
-                break
-        return emit(
-            {
-                "ok": True,
-                "action": "setup",
-                "remote": remote,
-                "mount": mount,
-                "unit": unit,
-                "account": account,
-                "error": "",
-            }
-        )
-    if not args.reconnect:
-        return fail("Sign in with Microsoft first")
+    token, error = authorize(binary, ends["auth_url"], ends["token_url"])
+    if error:
+        return fail(error)
     if args.reconnect:
-        remote = requested
+        remote = sanitize_remote(args.remote or "")
         if not remote or remote not in remotes:
             return fail("No existing remote to reconnect")
         unit = f"rclone-{remote}.service"
@@ -634,48 +597,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 "error": "",
             }
         )
-    return fail("Sign in again to continue setup")
-
-
-def cmd_discard() -> int:
-    clear_pending()
-    return emit({"ok": True, "action": "discard", "error": ""})
-
-
-def cmd_authorize(args: argparse.Namespace) -> int:
-    binary = rclone_bin()
-    if not binary:
-        return fail("rclone is not installed")
-    clear_pending()
-    account = args.account
-    region = args.region or "global"
-    remotes = existing_remotes(binary)
-    ends = endpoints(account, region)
-    token, error = authorize(binary, ends["auth_url"], ends["token_url"])
-    if error:
-        return fail(error)
-    email = email_from_token_blob(token)
-    suggested = remote_from_email(email, remotes)
-    domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
-    save_pending(
-        {
-            "created": time.time(),
-            "account": account,
-            "region": region,
-            "token": token,
-            "suggestedRemote": suggested,
-            "domain": domain,
-        }
-    )
-    return emit(
-        {
-            "ok": True,
-            "action": "authorized",
-            "suggestedRemote": suggested,
-            "domain": domain,
-            "error": "",
-        }
-    )
+    remote = remote_from_email(email_from_token_blob(token), remotes)
+    if not remote:
+        return fail("Could not read the signed-in account domain")
+    return finish_mount(binary, remote, account, region, token, mount, args.rc)
 
 
 def cmd_install_rclone() -> int:
@@ -699,7 +624,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="setup",
-        choices=["setup", "authorize", "discard", "reconnect", "install-rclone", "remove"],
+        choices=["setup", "reconnect", "install-rclone", "remove"],
     )
     parser.add_argument("--account", default="personal", choices=["personal", "business", "sharepoint"])
     parser.add_argument("--region", default="global")
@@ -715,10 +640,6 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.command == "install-rclone":
         return cmd_install_rclone()
-    if args.command == "discard":
-        return cmd_discard()
-    if args.command == "authorize":
-        return cmd_authorize(args)
     if args.command == "remove":
         return cmd_remove(args)
     if args.command == "reconnect":

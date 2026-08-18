@@ -13,7 +13,7 @@ This is not [OmaOneDrive](https://github.com/salemsayed/omaonedrive). That plugi
 - Open the mount from the hero toolbar: Files (Nautilus) or a terminal already `cd`'d there.
 - Start / stop / restart the systemd unit. User units use `systemctl --user`. System units go through `pkexec`.
 - Desktop notification when the mount drops or comes back (not for a user-initiated stop).
-- First-time setup: pick Personal / Work or school / SharePoint, then sign in. After Microsoft login the remote name is filled with the account domain (`jason@philotic.net` → `philotic-net`). You can type over it, then create the mount.
+- First-time setup: pick Personal / Work or school / SharePoint, then sign in. The remote is named from the account domain (`jason@philotic.net` → `philotic-net`) and mounted immediately. There is no rename step.
 
 The helper never walks the live FUSE mount. Recent files come from `~/.cache/rclone/vfs/<remote>` only. Quota (`rclone about`) runs when you open the panel and on a slow timer, not on every bar poll.
 
@@ -24,7 +24,7 @@ If rclone or an OneDrive remote is missing, the panel is a wizard instead of the
 1. Choose **Personal Microsoft account**, **Work or school**, or **SharePoint library**.
 2. Click **Sign in with Microsoft** (or press `L`).
 3. Finish login in the browser. Personal uses `login.microsoftonline.com/consumers` so you do not land on a work tenant by mistake. Work uses `/organizations`.
-4. The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/OneDrive`.
+4. The remote is named from the signed-in domain (dots become hyphens). The plugin writes `~/.config/systemd/user/rclone-<name>.service`, enables it, and mounts `~/OneDrive`.
 
 `omarchy-shell jason.rclone-onedrive setup` starts the same flow. If the token later expires, the panel offers **Sign in again**.
 
@@ -108,7 +108,7 @@ omarchy-shell jason.rclone-onedrive terminal
 ## Safety
 
 - No walk of the FUSE tree (that would pull OneDrive through `--vfs-cache-mode full`).
-- No OAuth UI. Reauth is `rclone config reconnect REMOTE:` in a terminal.
+- First-run and expired-token sign-in happen in the panel. The remote name is always the account domain.
 - Pause/resume only starts or stops the discovered systemd unit.
 
 ## License

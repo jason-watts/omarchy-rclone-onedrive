@@ -40,20 +40,21 @@ Then click the icon again.
 ## 2. Sign in
 
 1. Click **Personal Microsoft account** (that is the old philotic account type).
-   Clicking the row starts login. **Sign in with Microsoft** does the same.
+   That only selects the account type. Then click **Sign in with Microsoft**.
 2. A browser tab should open on
    `login.microsoftonline.com/consumers` (not `/common`, not a quoted
    `localhost:53682/"`).
 3. Finish Microsoft login.
-4. The panel says **Waiting for the browser…**, then switches to the
-   status view.
+4. The panel says **Waiting for the browser…**, names the remote from the
+   account domain (`philotic.net` → `philotic-net`), creates the mount, then
+   switches to the status view. There is no rename step.
 
-Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `Esc` closes. After sign-in the remote name is filled from the account domain (`philotic.net` → `philotic-net`); you can type over it, then create the mount.
+Keys if you prefer the keyboard: `j`/`k` move, `Enter` or `L` starts sign-in, `Esc` closes.
 
 ## 3. Check that it worked
 
 ```bash
-rclone listremotes          # expect the name you typed, or the sign-in domain
+rclone listremotes          # expect the signed-in domain, e.g. philotic-net:
 findmnt ~/OneDrive          # expect that name as fuse.rclone
 systemctl --user is-active "rclone-<name>.service"   # active
 /bin/ls ~/OneDrive | head
@@ -82,7 +83,7 @@ A leftover FUSE handle prints `Transport endpoint is not connected`.
 
 | Piece | Where |
 |---|---|
-| rclone remote | the name you typed or the sign-in domain, in `~/.config/rclone/rclone.conf` |
+| rclone remote | the signed-in account domain (`philotic.net` → `philotic-net`) in `~/.config/rclone/rclone.conf` |
 | Mount | `~/OneDrive` |
 | systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
 | RC | `http://127.0.0.1:5572` |

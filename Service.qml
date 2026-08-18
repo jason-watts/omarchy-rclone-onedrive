@@ -34,8 +34,6 @@ Item {
   property bool needsAuth: false
   property string setupAccount: "personal"
   property string setupRemote: ""
-  property bool setupPending: false
-  property string setupDomain: ""
   property bool linger: false
   property string unitScope: "user"
   property bool refreshing: false
@@ -273,17 +271,10 @@ Item {
     setupProcess.running = false
   }
 
-  function discardPending() {
-    setupPending = false
-    setupDomain = ""
-    if (setupHelperPath === "") return
-    Quickshell.execDetached(["/usr/bin/python3", setupHelperPath, "discard"])
-  }
-
   function runSetup(kind) {
     if (setupHelperPath === "") return
-    if (kind === "authorize" && setupProcess.running) {
-      _setupRestart = "authorize"
+    if (kind === "setup" && setupProcess.running) {
+      _setupRestart = "setup"
       cancelSetup()
       return
     }
@@ -296,15 +287,11 @@ Item {
     } else if (kind === "reconnect") {
       actionStatus = "Complete sign-in in the browser…"
       setupProcess.command = ["/usr/bin/python3", setupHelperPath, "reconnect", "--account", setupAccount, "--remote", String(remote || setupRemote)]
-    } else if (kind === "authorize") {
-      actionStatus = "Complete sign-in in the browser…"
-      setupProcess.command = ["/usr/bin/python3", setupHelperPath, "authorize", "--account", setupAccount]
     } else {
-      actionStatus = "Creating mount…"
+      actionStatus = "Complete sign-in in the browser…"
       setupProcess.command = [
         "/usr/bin/python3", setupHelperPath, "setup",
         "--account", setupAccount,
-        "--remote", String(setupRemote || ""),
         "--mount", String(setting("mountPath", "") || "")
       ]
     }
@@ -489,25 +476,19 @@ Item {
         root.needsAuth = false
         root.needsMount = false
         root.setupRemote = ""
-        root.setupPending = false
-        root.setupDomain = ""
         root.state = "stopped"
         root.statusText = "Set up rclone"
-      } else if (parsed.action === "authorized") {
-        root.lastError = ""
-        root.setupDomain = String(parsed.domain || "")
-        if (parsed.suggestedRemote) root.setupRemote = String(parsed.suggestedRemote)
-        root.setupPending = true
-        root.actionStatus = root.setupRemote !== ""
-          ? "Signed in. Remote name is " + root.setupRemote
-          : "Signed in. Name this remote, then create the mount"
       } else {
         root.lastError = ""
-        root.setupPending = false
-        root.actionStatus = parsed.action === "reconnect" ? "Signed in" : "OneDrive is ready"
-        if (parsed.remote) root.remote = String(parsed.remote)
+        if (parsed.remote) {
+          root.remote = String(parsed.remote)
+          root.setupRemote = String(parsed.remote)
+        }
         if (parsed.mount) root.mountPath = String(parsed.mount)
         if (parsed.unit) root.unit = String(parsed.unit)
+        root.actionStatus = parsed.action === "reconnect"
+          ? "Signed in"
+          : (root.remote !== "" ? "Mounted as " + root.remote : "OneDrive is ready")
       }
       actionStatusTimer.restart()
       settleTimer.ticks = 0
