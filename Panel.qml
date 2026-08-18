@@ -409,7 +409,7 @@ Panel {
             PanelHero {
               id: hero
               width: parent.width
-              title: "OneDrive"
+              title: "rclone OneDrive"
               meta: store.needsSetup ? "Set up rclone" : (store.remote || store.statusText)
               foreground: root.foreground
               fontFamily: root.fontFamily

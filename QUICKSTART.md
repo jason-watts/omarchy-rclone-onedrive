@@ -46,7 +46,7 @@ omarchy-shell jason.rclone-onedrive status
 
 In the panel:
 
-- hero shows the remote name under **OneDrive**
+- hero shows the remote name under **rclone OneDrive**
 - the folder and terminal icons open the mount
 - `p` or the toggle stops and starts the mount
 - **Mount at boot** (or `b`) turns on `loginctl linger` so the user unit starts before login

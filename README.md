@@ -11,7 +11,7 @@ omarchy plugin add https://github.com/jason-watts/omarchy-rclone-onedrive.git --
 omarchy bar move jason.rclone-onedrive --section right
 ```
 
-Then click the OneDrive icon on the bar.
+Then click the rclone OneDrive icon on the bar.
 
 ## Remove
 

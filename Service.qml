@@ -344,13 +344,13 @@ Item {
     if (_suppressNotify) return
     if (prev === "healthy" && next !== "healthy") {
       Quickshell.execDetached([
-        "notify-send", "-a", "OneDrive", "-u", "critical",
-        "OneDrive disconnected", statusMessage(next)
+        "notify-send", "-a", "rclone OneDrive", "-u", "critical",
+        "rclone OneDrive disconnected", statusMessage(next)
       ])
     } else if (next === "healthy" && prev !== "healthy") {
       Quickshell.execDetached([
-        "notify-send", "-a", "OneDrive",
-        "OneDrive connected", remote + " is mounted again"
+        "notify-send", "-a", "rclone OneDrive",
+        "rclone OneDrive connected", remote + " is mounted again"
       ])
     }
   }

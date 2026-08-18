@@ -200,8 +200,8 @@ function alarming(state) {
 }
 
 function tooltip(status) {
-  if (!status) return "OneDrive"
-  var line = String(status.remote || "OneDrive") + " · " + stateReason(status)
+  if (!status) return "rclone OneDrive"
+  var line = String(status.remote || "rclone OneDrive") + " · " + stateReason(status)
   if (status.transferring && status.transferring.length > 0) {
     line += " · " + status.transferring[0].name
   }
