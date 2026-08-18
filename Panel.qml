@@ -16,19 +16,8 @@ Panel {
   property string focusSection: "header"
   property int fileIndex: 0
   property bool cursorActive: false
-  property int phraseIndex: 0
   property double nowMs: Date.now()
 
-  readonly property var activePhrases: [
-    "Mirroring OneDrive",
-    "Caching clouds",
-    "Keeping OneDrive close",
-    "Watching the mount",
-    "Filing from afar",
-    "Holding the fuse",
-    "Syncing the quiet way"
-  ]
-  readonly property string heroPhraseText: activePhrases[phraseIndex % activePhrases.length]
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
@@ -423,8 +412,7 @@ Panel {
               id: hero
               width: parent.width
               title: "OneDrive"
-              meta: store.needsSetup ? "Set up rclone" : (store.healthy ? root.heroPhraseText : store.statusText)
-              detail: store.remote || (store.needsSetup ? "First-time setup" : "")
+              meta: store.needsSetup ? "Set up rclone" : (store.remote || store.statusText)
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconOpacity: store.active ? 1.0 : 0.5
@@ -782,33 +770,10 @@ Panel {
   }
 
   Timer {
-    id: phraseTimer
-    interval: 2800
-    running: root.opened && store.healthy
-    repeat: true
-    onTriggered: phraseSwap.restart()
-  }
-
-  Timer {
     interval: 30000
     running: root.opened
     repeat: true
     onTriggered: root.nowMs = Date.now()
-  }
-
-  SequentialAnimation {
-    id: phraseSwap
-    PropertyAnimation {
-      target: hero; property: "metaOpacity"
-      to: 0.0; duration: 180; easing.type: Easing.OutQuad
-    }
-    ScriptAction {
-      script: root.phraseIndex = (root.phraseIndex + 1) % root.activePhrases.length
-    }
-    PropertyAnimation {
-      target: hero; property: "metaOpacity"
-      to: 1.0; duration: 260; easing.type: Easing.InQuad
-    }
   }
 
   component SetupChoice: CursorSurface {
