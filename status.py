@@ -180,15 +180,19 @@ def list_rclone_units() -> list[tuple[str, str]]:
 
 def match_unit(remote: str, mount: str) -> tuple[str, str]:
     remote_key = remote.rstrip(":")
+    expected = f"rclone-{remote_key}.service" if remote_key else ""
     for unit, scope in list_rclone_units():
         blob = unit_exec(unit, scope == "user")
-        if remote_key and remote_key + ":" in blob:
+        if expected and unit == expected:
             return unit, scope
-        if mount and mount in blob:
+        if remote_key and (
+            f'"{remote_key}:"' in blob
+            or f" {remote_key}:" in blob
+        ):
             return unit, scope
-        if remote_key and remote_key in unit:
+        if mount and (f'"{mount}"' in blob or f" {mount} " in blob or f" {mount}\n" in blob):
             return unit, scope
-    return "", "system"
+    return "", "user"
 
 
 def exclude_note_from_unit(unit: str, scope: str) -> str:
@@ -689,7 +693,7 @@ def cmd_linger(args: argparse.Namespace) -> int:
 def cmd_control(args: argparse.Namespace) -> int:
     verb = args.command
     unit = str(args.unit or "")
-    if not re.fullmatch(r"rclone-[A-Za-z0-9_-]+\.service", unit):
+    if not re.fullmatch(r"rclone-[A-Za-z0-9][A-Za-z0-9_.-]{0,200}\.service", unit):
         return emit({"ok": False, "action": verb, "error": "No rclone unit found"})
     command = ["systemctl", "--user", verb, unit]
     code, stdout, stderr = run(command, timeout=30.0)

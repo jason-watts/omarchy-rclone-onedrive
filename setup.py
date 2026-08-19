@@ -384,12 +384,29 @@ def email_from_token_blob(token_blob: str) -> str:
 
 
 def sanitize_remote(name: str) -> str:
+    """Slug for *new* remotes minted from an email domain (dots become hyphens)."""
     cleaned = (name or "").strip().lower().replace(".", "-")
     cleaned = re.sub(r"[^a-z0-9_-]+", "", cleaned)
     return cleaned.strip("-_")
 
 
-UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9_-]+\.service$")
+def validate_remote_name(name: str) -> str:
+    """Exact rclone remote name. Dots stay dots; no mapping to hyphens."""
+    raw = (name or "").strip()
+    if not raw or UNIT_CONTROL_RE.search(raw) or any(ord(ch) > 126 for ch in raw):
+        return ""
+    if raw in (".", "..") or "/" in raw or "\\" in raw or ":" in raw or ".." in raw:
+        return ""
+    if Path(raw).name != raw:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,200}", raw):
+        return ""
+    if raw.startswith(".") or raw.endswith(".") or raw.endswith("-"):
+        return ""
+    return raw
+
+
+UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9][A-Za-z0-9_.-]{0,200}\.service$")
 UNIT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 MOUNT_INPUT_RE = re.compile(r"^(?:~(?:/|$)|/)[A-Za-z0-9._/-]*$")
 RC_SOCKET_NAME = "omarchy-rclone-onedrive.sock"
@@ -514,7 +531,7 @@ def upsert_ini_value(text: str, section: str, key: str, value: str) -> str:
 
 
 def write_remote_token(name: str, token: str) -> None:
-    remote = sanitize_remote(name)
+    remote = validate_remote_name(name)
     if not remote or not token:
         raise ValueError("missing remote or token")
     path = rclone_config_path()
@@ -534,7 +551,7 @@ def plugin_onedrive_root() -> Path:
 
 
 def plugin_mount_path(remote: str) -> Path:
-    name = sanitize_remote(remote)
+    name = validate_remote_name(remote)
     if not name:
         raise ValueError("Invalid remote")
     path = plugin_onedrive_root() / name
@@ -634,13 +651,14 @@ def remote_from_email(email: str, taken: set[str]) -> str:
     if "@" not in (email or ""):
         return ""
     domain = email.rsplit("@", 1)[-1].lower().strip()
-    base = sanitize_remote(domain)
+    base = validate_remote_name(domain) or validate_remote_name(sanitize_remote(domain))
     if not base:
         return ""
     name = base
     n = 2
     while name in taken:
-        name = f"{base}-{n}"
+        candidate = f"{base}-{n}"
+        name = validate_remote_name(candidate) or candidate
         n += 1
     return name
 
@@ -726,38 +744,81 @@ def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
     return default
 
 
+def compact_token_blob(token: str) -> str:
+    try:
+        data = json.loads(token)
+    except json.JSONDecodeError:
+        return token
+    if not isinstance(data, dict) or not data.get("access_token"):
+        return token
+    return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+
+
+def drive_info_from_token(token: str, account: str) -> tuple[str, str]:
+    try:
+        data = json.loads(token)
+    except json.JSONDecodeError:
+        data = {}
+    access = str(data.get("access_token") or "") if isinstance(data, dict) else ""
+    if not access:
+        return "", ""
+    info = graph_json(
+        access,
+        "https://graph.microsoft.com/v1.0/me/drive?$select=id,driveType",
+    )
+    drive_id = str(info.get("id") or "")
+    drive_type = str(info.get("driveType") or "")
+    if drive_type not in ("personal", "business", "documentLibrary"):
+        drive_type = {
+            "personal": "personal",
+            "business": "business",
+            "sharepoint": "documentLibrary",
+        }.get(account, "personal")
+    return drive_id, drive_type
+
+
+def write_onedrive_remote(
+    name: str,
+    token: str,
+    region: str,
+    drive_id: str,
+    drive_type: str,
+    ends: dict[str, str],
+) -> None:
+    remote = validate_remote_name(name)
+    token = compact_token_blob(token)
+    if not remote or not token or not drive_id:
+        raise ValueError("missing remote, token, or drive")
+    path = rclone_config_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    current = path.read_text(encoding="utf-8") if path.is_file() and not path.is_symlink() else ""
+    fields = (
+        ("type", "onedrive"),
+        ("token", token),
+        ("drive_id", drive_id),
+        ("drive_type", drive_type),
+        ("region", region or "global"),
+        ("auth_url", ends["auth_url"]),
+        ("token_url", ends["token_url"]),
+        ("access_scopes", ACCESS_SCOPES),
+    )
+    for key, value in fields:
+        current = upsert_ini_value(current, remote, key, value)
+    write_atomic_file(path, current, 0o600)
+
+
 def create_remote(bin_path: str, name: str, account: str, region: str, token: str) -> str:
-    write_remote_token(name, token)
+    del bin_path
+    token = compact_token_blob(token)
     ends = endpoints(account, region)
-    extra = [
-        "region",
-        region,
-        "auth_url",
-        ends["auth_url"],
-        "token_url",
-        ends["token_url"],
-        "access_scopes",
-        ACCESS_SCOPES,
-    ]
-    data = ni(bin_path, name, extra)
-    for _ in range(24):
-        state = data.get("State") or ""
-        option = data.get("Option") or {}
-        if data.get("Error") and not state:
-            return public_error(str(data.get("Error")))
-        if not state:
-            return ""
-        if option.get("Name") == "config_token":
-            write_remote_token(name, token)
-            result = ""
-        else:
-            result = pick_result(option, account, ends)
-        data = ni(
-            bin_path,
-            name,
-            extra + ["--continue", "--state", state, "--result", result],
-        )
-    return "rclone asked too many setup questions"
+    drive_id, drive_type = drive_info_from_token(token, account)
+    if not drive_id:
+        return "Could not read this account's OneDrive id"
+    try:
+        write_onedrive_remote(name, token, region, drive_id, drive_type, ends)
+    except ValueError as exc:
+        return str(exc)
+    return ""
 
 
 def unit_file_lines(remote: str, start: str, stop: str) -> list[str]:
@@ -801,7 +862,9 @@ def validate_unit_lines(lines: list[str], remote: str) -> None:
 
 
 def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
-    remote = sanitize_remote(remote)
+    remote = validate_remote_name(remote)
+    if not remote:
+        raise ValueError("Invalid remote")
     unit = f"rclone-{remote}.service"
     unit_path = resolved_user_unit(unit)
     if unit_path is None:
@@ -906,9 +969,10 @@ def user_systemd_root() -> Path:
 
 
 def safe_unit_name(unit: str, remote: str) -> str:
-    expected = f"rclone-{sanitize_remote(remote)}.service"
+    name = validate_remote_name(remote)
+    expected = f"rclone-{name}.service" if name else ""
     raw = (unit or "").strip()
-    if raw == expected and UNIT_NAME_RE.fullmatch(raw):
+    if expected and raw == expected and UNIT_NAME_RE.fullmatch(raw):
         return raw
     return expected
 
@@ -1052,8 +1116,10 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     binary = rclone_bin()
     if not binary:
         return fail("rclone is not installed")
-    remote = sanitize_remote(args.remote or "")
+    remote = validate_remote_name(args.remote or "")
     if not remote:
+        return fail("No remote to remove")
+    if remote not in existing_remotes(binary):
         return fail("No remote to remove")
     leftover = find_mount(remote)
     try:
@@ -1145,7 +1211,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return fail(error)
     emit_line({"ok": True, "action": "setup", "phase": "authorized"})
     if args.reconnect:
-        remote = sanitize_remote(args.remote or "")
+        remote = validate_remote_name(args.remote or "")
         if not remote or remote not in remotes:
             return fail("No existing remote to reconnect")
         try:
