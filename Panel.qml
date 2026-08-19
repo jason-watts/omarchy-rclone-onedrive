@@ -9,8 +9,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "jason.rclone-onedrive"
-  ipcTarget: "jason.rclone-onedrive"
+  moduleName: "jason-watts.rclone-onedrive"
+  ipcTarget: "jason-watts.rclone-onedrive"
   manageIpc: false
 
   property string focusSection: "header"

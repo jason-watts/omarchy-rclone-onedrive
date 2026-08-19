@@ -6,7 +6,7 @@ Automate your OneDrive rclone configuration from the Omarchy bar. Sign in with M
 
 ```bash
 omarchy plugin add https://github.com/jason-watts/omarchy-rclone-onedrive.git --enable
-omarchy bar move jason.rclone-onedrive --section right
+omarchy bar move jason-watts.rclone-onedrive --section right
 ```
 
 Click the cloud icon on the bar.
@@ -28,7 +28,7 @@ Use the folder and terminal icons in the panel header. Middle-click the bar icon
 **Remove remote** at the bottom of the panel unmounts, deletes the rclone login, and removes the empty `~/onedrive/<name>` folder. Cloud files stay in OneDrive.
 
 ```bash
-omarchy plugin remove jason.rclone-onedrive
+omarchy plugin remove jason-watts.rclone-onedrive
 ```
 
 That only removes the plugin. Use **Remove remote** first if you also want the mount gone.

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""OneDrive / rclone mount status for the jason.rclone-onedrive Omarchy widget.
+"""OneDrive / rclone mount status for the jason-watts.rclone-onedrive Omarchy widget.
 
 Fast path never talks to OneDrive and never walks the FUSE mount. Quota is a
 separate `about` subcommand. start/stop/restart use systemctl --user when the

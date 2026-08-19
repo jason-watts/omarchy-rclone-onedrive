@@ -1,6 +1,6 @@
 # Quickstart
 
-Walk the **jason.rclone-onedrive** Omarchy bar plugin as if OneDrive had never been configured.
+Walk the **jason-watts.rclone-onedrive** Omarchy bar plugin as if OneDrive had never been configured.
 
 ## 0. Confirm you are clean
 
@@ -8,7 +8,7 @@ Walk the **jason.rclone-onedrive** Omarchy bar plugin as if OneDrive had never b
 rclone listremotes
 findmnt -t fuse.rclone
 systemctl --user list-units 'rclone*' --all
-omarchy-shell jason.rclone-onedrive status
+omarchy-shell jason-watts.rclone-onedrive status
 ```
 
 You want no OneDrive remotes, no `~/onedrive/<name>` mount, and a status of **Needs setup**. If a remote is still there, use **Remove remote** in the panel.
@@ -23,7 +23,7 @@ If it still shows the old layout:
 
 ```bash
 omarchy restart shell
-omarchy-shell jason.rclone-onedrive refresh
+omarchy-shell jason-watts.rclone-onedrive refresh
 ```
 
 ## 2. Sign in
@@ -41,7 +41,7 @@ Keys: `j`/`k` move, `Enter` starts sign-in on the highlighted account, `Esc` clo
 rclone listremotes
 findmnt ~/onedrive/<name>
 systemctl --user is-active rclone-<name>.service
-omarchy-shell jason.rclone-onedrive status
+omarchy-shell jason-watts.rclone-onedrive status
 ```
 
 In the panel:

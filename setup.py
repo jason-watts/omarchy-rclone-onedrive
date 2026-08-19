@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""First-run OneDrive setup for jason.rclone-onedrive.
+"""First-run OneDrive setup for jason-watts.rclone-onedrive.
 
 Walks rclone's non-interactive config protocol, signs in at the matching
 Microsoft endpoint (consumers vs organizations), names the remote from the
