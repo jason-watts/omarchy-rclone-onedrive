@@ -57,17 +57,47 @@ def fail(error: str, **extra) -> int:
     return emit(payload)
 
 
+FUSERMOUNT3 = Path("/usr/bin/fusermount3")
+RCLONE_DIRS = (Path("/usr/bin"), Path("/usr/local/bin"))
+
+
+def rclone_allowed_dirs() -> set[Path]:
+    dirs = {*RCLONE_DIRS, Path.home() / ".local" / "bin"}
+    allowed: set[Path] = set()
+    for path in dirs:
+        try:
+            allowed.add(path.resolve())
+        except OSError:
+            continue
+    return allowed
+
+
 def rclone_bin() -> str:
+    candidates = []
     found = shutil.which("rclone")
     if found:
-        return found
-    for candidate in (
-        Path.home() / ".local" / "bin" / "rclone",
-        Path("/usr/bin/rclone"),
-        Path("/usr/local/bin/rclone"),
-    ):
-        if candidate.is_file():
-            return str(candidate)
+        candidates.append(Path(found))
+    candidates.extend(
+        (
+            Path.home() / ".local" / "bin" / "rclone",
+            Path("/usr/bin/rclone"),
+            Path("/usr/local/bin/rclone"),
+        )
+    )
+    allowed = rclone_allowed_dirs()
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            if candidate.name != "rclone":
+                continue
+            resolved = candidate.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            if resolved.parent.resolve() in allowed:
+                return str(resolved)
+        except OSError:
+            continue
     return ""
 
 
@@ -316,7 +346,36 @@ def sanitize_remote(name: str) -> str:
 
 UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9_-]+\.service$")
 UNIT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
-RC_ADDR_RE = re.compile(r"^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$")
+MOUNT_INPUT_RE = re.compile(r"^(?:~(?:/|$)|/)[A-Za-z0-9._/-]*$")
+RC_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+UNIT_KEYS = frozenset(
+    {
+        "Description",
+        "After",
+        "Wants",
+        "Type",
+        "ExecStart",
+        "ExecStop",
+        "TimeoutStopSec",
+        "SuccessExitStatus",
+        "Restart",
+        "WantedBy",
+    }
+)
+UNIT_CONSTANT_LINES = {
+    0: "[Unit]",
+    2: "After=network-online.target",
+    3: "Wants=network-online.target",
+    4: "",
+    5: "[Service]",
+    6: "Type=notify",
+    9: "TimeoutStopSec=10",
+    10: "SuccessExitStatus=143",
+    11: "Restart=on-failure",
+    12: "",
+    13: "[Install]",
+    14: "WantedBy=default.target",
+}
 
 
 def public_error(text: str) -> str:
@@ -397,14 +456,30 @@ def write_remote_token(name: str, token: str) -> None:
     path.chmod(0o600)
 
 
+def plugin_onedrive_root() -> Path:
+    root = Path.home().resolve() / "onedrive"
+    if root.exists() and (root.is_symlink() or not root.is_dir()):
+        raise ValueError("Invalid mount path")
+    return root
+
+
+def plugin_mount_path(remote: str) -> Path:
+    name = sanitize_remote(remote)
+    if not name:
+        raise ValueError("Invalid remote")
+    path = plugin_onedrive_root() / name
+    if path.exists() and path.is_symlink():
+        raise ValueError("Invalid mount path")
+    return path
+
+
 def default_mount(remote: str) -> str:
-    name = sanitize_remote(remote) or "onedrive"
-    return str(Path.home() / "onedrive" / name)
+    return str(plugin_mount_path(remote))
 
 
 def systemd_exec_arg(value: str) -> str:
     """Quote one ExecStart/ExecStop argument so it cannot split the unit line."""
-    if not value or UNIT_CONTROL_RE.search(value):
+    if not value or UNIT_CONTROL_RE.search(value) or any(ord(ch) > 126 for ch in value):
         raise ValueError("Invalid unit argument")
     escaped = (
         value.replace("\\", "\\\\")
@@ -416,50 +491,63 @@ def systemd_exec_arg(value: str) -> str:
 
 
 def safe_mount_path(explicit: str, remote: str) -> str:
-    if explicit and UNIT_CONTROL_RE.search(explicit):
-        raise ValueError("Invalid mount path")
+    expected = plugin_mount_path(remote)
     raw = (explicit or "").strip()
-    if raw and UNIT_CONTROL_RE.search(raw):
+    if not raw:
+        return str(expected)
+    if UNIT_CONTROL_RE.search(explicit or "") or UNIT_CONTROL_RE.search(raw):
         raise ValueError("Invalid mount path")
-    path = Path(raw).expanduser() if raw else Path(default_mount(remote))
-    if not path.is_absolute():
+    if not MOUNT_INPUT_RE.fullmatch(raw):
+        raise ValueError("Invalid mount path")
+    if raw.startswith("~") and not (raw == "~" or raw.startswith("~/")):
+        raise ValueError("Invalid mount path")
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
         raise ValueError("Mount path must be absolute")
-    normalized = Path(os.path.normpath(path))
-    if not normalized.is_absolute() or ".." in normalized.parts:
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:
+        raise ValueError("Invalid mount path") from exc
+    if resolved != expected.resolve():
+        raise ValueError("Mount path must be ~/onedrive/<remote>")
+    return str(expected)
+
+
+def ensure_mount_dir(remote: str) -> str:
+    path = plugin_mount_path(remote)
+    root = path.parent
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if root.is_symlink() or not root.is_dir():
         raise ValueError("Invalid mount path")
-    text = str(normalized)
-    if UNIT_CONTROL_RE.search(text):
+    path.mkdir(mode=0o700, exist_ok=True)
+    if path.is_symlink() or not path.is_dir() or path.resolve() != path:
         raise ValueError("Invalid mount path")
-    return text
+    return str(path)
 
 
 def safe_rc_addr(rc_url: str) -> str:
-    if rc_url and UNIT_CONTROL_RE.search(rc_url):
-        raise ValueError("Invalid RC address")
     raw = (rc_url or "http://127.0.0.1:5572").strip()
-    if UNIT_CONTROL_RE.search(raw):
+    if not raw or any(ord(ch) < 32 or ord(ch) > 126 for ch in (rc_url or raw)):
         raise ValueError("Invalid RC address")
-    if "://" in raw:
-        parsed = urlparse(raw)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            raise ValueError("Invalid RC address")
-        host = parsed.hostname
-        port = parsed.port or 5572
-        addr = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
-    else:
-        addr = raw
-    if not RC_ADDR_RE.fullmatch(addr):
+    if UNIT_CONTROL_RE.search(rc_url or "") or UNIT_CONTROL_RE.search(raw):
         raise ValueError("Invalid RC address")
-    return addr
+    parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("Invalid RC address")
+    host = parsed.hostname
+    try:
+        port = parsed.port if parsed.port is not None else 5572
+    except ValueError as exc:
+        raise ValueError("Invalid RC address") from exc
+    if host not in RC_LOOPBACK or not (1 <= port <= 65535):
+        raise ValueError("RC must listen on localhost")
+    if host == "::1":
+        return f"[::1]:{port}"
+    return f"127.0.0.1:{port}"
 
 
 def resolve_mount(explicit: str, remote: str) -> str:
-    if (explicit or "").strip():
-        return safe_mount_path(explicit, remote)
-    found = find_mount(remote) if remote else ""
-    if found:
-        return safe_mount_path(found, remote)
-    return safe_mount_path("", remote)
+    return safe_mount_path(explicit, remote)
 
 
 def remote_from_email(email: str, taken: set[str]) -> str:
@@ -591,6 +679,46 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
     return "rclone asked too many setup questions"
 
 
+def unit_file_lines(remote: str, start: str, stop: str) -> list[str]:
+    return [
+        "[Unit]",
+        f"Description=rclone OneDrive mount ({remote})",
+        "After=network-online.target",
+        "Wants=network-online.target",
+        "",
+        "[Service]",
+        "Type=notify",
+        f"ExecStart={start}",
+        f"ExecStop={stop}",
+        "TimeoutStopSec=10",
+        "SuccessExitStatus=143",
+        "Restart=on-failure",
+        "",
+        "[Install]",
+        "WantedBy=default.target",
+    ]
+
+
+def validate_unit_lines(lines: list[str], remote: str) -> None:
+    if len(lines) != 15:
+        raise ValueError("Invalid unit content")
+    for index, expected in UNIT_CONSTANT_LINES.items():
+        if lines[index] != expected:
+            raise ValueError("Invalid unit content")
+    if lines[1] != f"Description=rclone OneDrive mount ({remote})":
+        raise ValueError("Invalid unit content")
+    if not lines[7].startswith("ExecStart=") or not lines[8].startswith("ExecStop="):
+        raise ValueError("Invalid unit content")
+    for line in lines:
+        if UNIT_CONTROL_RE.search(line):
+            raise ValueError("Invalid unit content")
+        if not line or line.startswith("["):
+            continue
+        key = line.split("=", 1)[0]
+        if key not in UNIT_KEYS:
+            raise ValueError("Invalid unit content")
+
+
 def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     remote = sanitize_remote(remote)
     unit = f"rclone-{remote}.service"
@@ -600,8 +728,10 @@ def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     mount = safe_mount_path(mount, remote)
     rc_addr = safe_rc_addr(rc_url)
     binary = rclone_bin()
-    if not binary or UNIT_CONTROL_RE.search(binary) or not Path(binary).is_file():
+    if not binary or not Path(binary).is_file():
         raise ValueError("rclone is not installed")
+    if not FUSERMOUNT3.is_file():
+        raise ValueError("fusermount3 is not installed")
     unit_path.parent.mkdir(parents=True, exist_ok=True)
     start = " ".join(
         [
@@ -621,32 +751,17 @@ def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     )
     stop = " ".join(
         [
-            systemd_exec_arg("/usr/bin/fusermount3"),
+            systemd_exec_arg(str(FUSERMOUNT3)),
             "-uz",
             systemd_exec_arg(mount),
         ]
     )
-    body = (
-        "[Unit]\n"
-        f"Description=rclone OneDrive mount ({remote})\n"
-        "After=network-online.target\n"
-        "Wants=network-online.target\n"
-        "\n"
-        "[Service]\n"
-        "Type=notify\n"
-        f"ExecStart={start}\n"
-        f"ExecStop={stop}\n"
-        "TimeoutStopSec=10\n"
-        "SuccessExitStatus=143\n"
-        "Restart=on-failure\n"
-        "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
-    exec_lines = [line for line in body.splitlines() if line.startswith("Exec")]
-    if len(exec_lines) != 2 or any(UNIT_CONTROL_RE.search(line) for line in exec_lines):
-        raise ValueError("Invalid unit content")
-    unit_path.write_text(body, encoding="utf-8")
+    lines = unit_file_lines(remote, start, stop)
+    validate_unit_lines(lines, remote)
+    body = "\n".join(lines) + "\n"
+    tmp = unit_path.with_name(unit_path.name + ".tmp")
+    tmp.write_text(body, encoding="utf-8")
+    tmp.replace(unit_path)
     return unit, str(unit_path)
 
 
@@ -816,15 +931,13 @@ def still_mounted(path: str) -> bool:
 
 
 def is_plugin_mount_dir(path: str, remote: str) -> bool:
-    name = sanitize_remote(remote)
-    if not name or not path:
+    if not path:
         return False
     try:
-        resolved = Path(path).expanduser().resolve()
-        root = (Path.home() / "onedrive").resolve()
-    except OSError:
+        expected = plugin_mount_path(remote)
+        return Path(path).expanduser().resolve() == expected.resolve()
+    except (OSError, ValueError):
         return False
-    return resolved.parent == root and resolved.name == name
 
 
 def remove_empty_mount(path: str) -> None:
@@ -838,7 +951,11 @@ def remove_empty_mount(path: str) -> None:
     except OSError:
         return
     parent = folder.parent
-    if parent == Path.home() / "onedrive" and parent.is_dir() and not still_mounted(str(parent)):
+    try:
+        root = plugin_onedrive_root()
+    except ValueError:
+        return
+    if parent == root and parent.is_dir() and not still_mounted(str(parent)):
         try:
             parent.rmdir()
         except OSError:
@@ -859,19 +976,19 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
     if not remote:
         return fail("No remote to remove")
+    leftover = find_mount(remote)
     try:
-        if args.mount:
-            mount = safe_mount_path(args.mount, remote)
-        else:
-            found = find_mount(remote)
-            mount = safe_mount_path(found, remote) if found else ""
+        mount = safe_mount_path(args.mount, remote) if args.mount else default_mount(remote)
     except ValueError:
-        mount = ""
+        try:
+            mount = default_mount(remote)
+        except ValueError:
+            mount = leftover
     unit = safe_unit_name(getattr(args, "unit", ""), remote)
     # Detach FUSE first so systemctl stop does not hang on a busy mount.
-    lazy_unmount(mount)
-    leftover = find_mount(remote)
     lazy_unmount(leftover)
+    if mount and mount != leftover:
+        lazy_unmount(mount)
     try:
         stop_user_unit(unit, mount or leftover)
     except (subprocess.TimeoutExpired, OSError):
@@ -903,7 +1020,10 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
 def finish_mount(binary: str, remote: str, account: str, region: str, token: str, mount: str, rc: str) -> int:
     mount = safe_mount_path(mount, remote)
-    Path(mount).mkdir(parents=True, exist_ok=True)
+    leftover = find_mount(remote)
+    if leftover and leftover != mount:
+        lazy_unmount(leftover)
+    mount = ensure_mount_dir(remote)
     error = create_remote(binary, remote, account, region, token)
     if error:
         return fail(error)
@@ -950,11 +1070,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
             return fail("No existing remote to reconnect")
         try:
             mount = resolve_mount(args.mount, remote)
+            leftover = find_mount(remote)
+            if leftover and leftover != mount:
+                lazy_unmount(leftover)
+            mount = ensure_mount_dir(remote)
         except ValueError as exc:
             return fail(str(exc))
-        Path(mount).mkdir(parents=True, exist_ok=True)
         unit = f"rclone-{remote}.service"
         stop_user_unit(unit, mount)
+        write_user_unit(remote, mount, args.rc)
         write_remote_token(remote, token)
         proc = subprocess.run(
             [binary, "config", "update", remote, "config_refresh_token", "false"],

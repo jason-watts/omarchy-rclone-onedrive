@@ -55,18 +55,44 @@ def rclone_candidates() -> list[Path]:
     ]
 
 
+def rclone_allowed_dirs() -> set[Path]:
+    allowed: set[Path] = set()
+    for path in (Path("/usr/bin"), Path("/usr/local/bin"), Path.home() / ".local" / "bin"):
+        try:
+            allowed.add(path.resolve())
+        except OSError:
+            continue
+    return allowed
+
+
 def rclone_bin() -> str:
+    candidates = []
     found = shutil.which("rclone")
     if found:
-        return found
-    for candidate in rclone_candidates():
-        if candidate.is_file():
-            return str(candidate)
-    return "rclone"
+        candidates.append(Path(found))
+    candidates.extend(rclone_candidates())
+    allowed = rclone_allowed_dirs()
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            if candidate.name != "rclone":
+                continue
+            resolved = candidate.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            if resolved.parent.resolve() in allowed:
+                return str(resolved)
+        except OSError:
+            continue
+    return ""
 
 
 def onedrive_remotes() -> list[str]:
-    code, stdout, _stderr = run([rclone_bin(), "config", "dump"], timeout=2.0)
+    binary = rclone_bin()
+    if not binary:
+        return []
+    code, stdout, _stderr = run([binary, "config", "dump"], timeout=2.0)
     if code != 0:
         return []
     try:
@@ -315,8 +341,11 @@ def probe_mount(mount_path: str) -> bool:
 
 
 def rc_json(rc_url: str, method: str) -> tuple[bool, dict]:
+    binary = rclone_bin()
+    if not binary:
+        return False, {}
     code, stdout, _stderr = run(
-        [rclone_bin(), "rc", "--url", rc_url, method], timeout=1.5
+        [binary, "rc", "--url", rc_url, method], timeout=1.5
     )
     if code != 0:
         return False, {}
@@ -562,8 +591,22 @@ def cmd_about(args: argparse.Namespace) -> int:
             }
         )
     remote = args.remote if args.remote.endswith(":") else f"{args.remote}:"
+    binary = rclone_bin()
+    if not binary:
+        return emit(
+            {
+                "ok": False,
+                "authHint": False,
+                "error": "rclone is not installed",
+                "usedBytes": 0,
+                "quotaBytes": 0,
+                "freeBytes": 0,
+                "trashedBytes": 0,
+                "quotaKnown": False,
+            }
+        )
     code, stdout, stderr = run(
-        [rclone_bin(), "about", remote, "--json"], timeout=25.0
+        [binary, "about", remote, "--json"], timeout=25.0
     )
     if code != 0:
         text = (stderr or stdout or "rclone about failed").strip()
