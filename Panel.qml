@@ -410,7 +410,7 @@ Panel {
               id: hero
               width: parent.width
               title: "rclone OneDrive"
-              meta: store.needsSetup ? "Set up rclone" : (store.remote || store.statusText)
+              meta: Model.plainText(store.needsSetup ? "Set up rclone" : (store.remote || store.statusText))
               foreground: root.foreground
               fontFamily: root.fontFamily
               iconOpacity: store.active ? 1.0 : 0.5
@@ -525,6 +525,7 @@ Panel {
             visible: store.actionStatus !== "" || store.lastError !== ""
             width: parent.width
             text: store.actionStatus !== "" ? store.actionStatus : store.lastError
+            textFormat: Text.PlainText
             color: store.lastError !== "" && store.actionStatus === "" ? root.urgent : root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -555,6 +556,7 @@ Panel {
             visible: !store.needsSetup && store.excludeNote !== ""
             width: parent.width
             text: store.excludeNote
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -564,6 +566,7 @@ Panel {
             visible: store.lastJournal !== "" && store.alarming
             width: parent.width
             text: store.lastJournal
+            textFormat: Text.PlainText
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -733,6 +736,7 @@ Panel {
                 Text {
                   Layout.fillWidth: true
                   text: "Deletes " + store.remote + " from rclone"
+                  textFormat: Text.PlainText
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -750,7 +754,7 @@ Panel {
         z: 20
         opened: false
         message: store.remote !== ""
-          ? "Remove rclone remote “" + store.remote + "”? The mount stops, the empty local folder is deleted, and the local login is removed. Files stay in OneDrive."
+          ? "Remove rclone remote “" + Model.plainText(store.remote) + "”? The mount stops, the empty local folder is deleted, and the local login is removed. Files stay in OneDrive."
           : "Remove this rclone remote?"
         cancelText: "Cancel"
         confirmText: "Remove"
@@ -972,6 +976,7 @@ Panel {
 
       Text {
         text: Model.fileGlyph(fileRow.fileName)
+        textFormat: Text.PlainText
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.icon
@@ -986,6 +991,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: fileRow.fileName
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -995,6 +1001,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: root.showingTransfers ? Model.transferMeta(fileRow.file) : Model.fileMeta(fileRow.file, root.nowMs)
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -1022,6 +1029,7 @@ Panel {
     opacity: 0.6
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
+    textFormat: Text.PlainText
   }
 
   component InfoValue: Text {
@@ -1029,5 +1037,6 @@ Panel {
     font.family: root.fontFamily
     font.pixelSize: Style.font.bodySmall
     elide: Text.ElideRight
+    textFormat: Text.PlainText
   }
 }

@@ -199,11 +199,15 @@ function alarming(state) {
   return state === "failed" || state === "stale" || state === "unauthenticated"
 }
 
+function plainText(value) {
+  return String(value || "").replace(/[<>]/g, "")
+}
+
 function tooltip(status) {
   if (!status) return "rclone OneDrive"
-  var line = String(status.remote || "rclone OneDrive") + " · " + stateReason(status)
+  var line = plainText(status.remote || "rclone OneDrive") + " · " + plainText(stateReason(status))
   if (status.transferring && status.transferring.length > 0) {
-    line += " · " + status.transferring[0].name
+    line += " · " + plainText(status.transferring[0].name)
   }
   return line
 }
@@ -217,6 +221,7 @@ if (typeof module !== "undefined") {
     formatBytes: formatBytes,
     usageText: usageText,
     formatSpeed: formatSpeed,
+    plainText: plainText,
     relativeTime: relativeTime,
     uptimeText: uptimeText,
     fileGlyph: fileGlyph,
