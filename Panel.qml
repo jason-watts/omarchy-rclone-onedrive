@@ -595,6 +595,7 @@ Panel {
               text: store.rcAvailable
                 ? "No cached or in-flight files."
                 : "No cached files. Enable rclone RC for live transfers."
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -668,6 +669,7 @@ Panel {
                 Text {
                   Layout.fillWidth: true
                   text: "Mount at boot"
+                  textFormat: Text.PlainText
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -676,6 +678,7 @@ Panel {
                 Text {
                   Layout.fillWidth: true
                   text: store.lingerActive ? "Starts before login" : "Starts when you log in"
+                  textFormat: Text.PlainText
                   color: root.dim
                   opacity: 0.8
                   font.family: root.fontFamily
@@ -728,6 +731,7 @@ Panel {
                 Text {
                   Layout.fillWidth: true
                   text: "Remove remote"
+                  textFormat: Text.PlainText
                   color: root.urgent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -861,6 +865,7 @@ Panel {
 
       Text {
         text: "󰌋"
+        textFormat: Text.PlainText
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.icon
@@ -873,6 +878,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: String(choiceRow.account.label || "")
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -881,6 +887,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: String(choiceRow.account.caption || "")
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -919,6 +926,7 @@ Panel {
 
       Text {
         text: "󰌋"
+        textFormat: Text.PlainText
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.icon
@@ -931,6 +939,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: "Install rclone"
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -939,6 +948,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: "Needed before OneDrive can be mounted"
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
