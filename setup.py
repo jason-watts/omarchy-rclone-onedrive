@@ -315,6 +315,8 @@ def sanitize_remote(name: str) -> str:
 
 
 UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9_-]+\.service$")
+UNIT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+RC_ADDR_RE = re.compile(r"^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$")
 
 
 def public_error(text: str) -> str:
@@ -400,13 +402,64 @@ def default_mount(remote: str) -> str:
     return str(Path.home() / "onedrive" / name)
 
 
+def systemd_exec_arg(value: str) -> str:
+    """Quote one ExecStart/ExecStop argument so it cannot split the unit line."""
+    if not value or UNIT_CONTROL_RE.search(value):
+        raise ValueError("Invalid unit argument")
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', r"\"")
+        .replace("$", "$$")
+        .replace("%", "%%")
+    )
+    return f'"{escaped}"'
+
+
+def safe_mount_path(explicit: str, remote: str) -> str:
+    if explicit and UNIT_CONTROL_RE.search(explicit):
+        raise ValueError("Invalid mount path")
+    raw = (explicit or "").strip()
+    if raw and UNIT_CONTROL_RE.search(raw):
+        raise ValueError("Invalid mount path")
+    path = Path(raw).expanduser() if raw else Path(default_mount(remote))
+    if not path.is_absolute():
+        raise ValueError("Mount path must be absolute")
+    normalized = Path(os.path.normpath(path))
+    if not normalized.is_absolute() or ".." in normalized.parts:
+        raise ValueError("Invalid mount path")
+    text = str(normalized)
+    if UNIT_CONTROL_RE.search(text):
+        raise ValueError("Invalid mount path")
+    return text
+
+
+def safe_rc_addr(rc_url: str) -> str:
+    if rc_url and UNIT_CONTROL_RE.search(rc_url):
+        raise ValueError("Invalid RC address")
+    raw = (rc_url or "http://127.0.0.1:5572").strip()
+    if UNIT_CONTROL_RE.search(raw):
+        raise ValueError("Invalid RC address")
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("Invalid RC address")
+        host = parsed.hostname
+        port = parsed.port or 5572
+        addr = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    else:
+        addr = raw
+    if not RC_ADDR_RE.fullmatch(addr):
+        raise ValueError("Invalid RC address")
+    return addr
+
+
 def resolve_mount(explicit: str, remote: str) -> str:
-    if explicit:
-        return str(Path(explicit).expanduser())
+    if (explicit or "").strip():
+        return safe_mount_path(explicit, remote)
     found = find_mount(remote) if remote else ""
     if found:
-        return found
-    return default_mount(remote)
+        return safe_mount_path(found, remote)
+    return safe_mount_path("", remote)
 
 
 def remote_from_email(email: str, taken: set[str]) -> str:
@@ -541,28 +594,58 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
 def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     remote = sanitize_remote(remote)
     unit = f"rclone-{remote}.service"
-    if not UNIT_NAME_RE.fullmatch(unit):
+    unit_path = resolved_user_unit(unit)
+    if unit_path is None:
         raise ValueError("Invalid unit name")
-    unit_path = Path.home() / ".config/systemd/user" / unit
-    unit_path.parent.mkdir(parents=True, exist_ok=True)
+    mount = safe_mount_path(mount, remote)
+    rc_addr = safe_rc_addr(rc_url)
     binary = rclone_bin()
-    rc_addr = rc_url.replace("http://", "").replace("https://", "")
-    body = f"""[Unit]
-Description=rclone OneDrive mount ({remote})
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-ExecStart={binary} mount {remote}: {mount} --vfs-cache-mode full --log-level INFO --rc --rc-addr {rc_addr} --rc-no-auth
-ExecStop=/usr/bin/fusermount3 -uz {mount}
-TimeoutStopSec=10
-SuccessExitStatus=143
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-"""
+    if not binary or UNIT_CONTROL_RE.search(binary) or not Path(binary).is_file():
+        raise ValueError("rclone is not installed")
+    unit_path.parent.mkdir(parents=True, exist_ok=True)
+    start = " ".join(
+        [
+            systemd_exec_arg(binary),
+            "mount",
+            systemd_exec_arg(f"{remote}:"),
+            systemd_exec_arg(mount),
+            "--vfs-cache-mode",
+            "full",
+            "--log-level",
+            "INFO",
+            "--rc",
+            "--rc-addr",
+            systemd_exec_arg(rc_addr),
+            "--rc-no-auth",
+        ]
+    )
+    stop = " ".join(
+        [
+            systemd_exec_arg("/usr/bin/fusermount3"),
+            "-uz",
+            systemd_exec_arg(mount),
+        ]
+    )
+    body = (
+        "[Unit]\n"
+        f"Description=rclone OneDrive mount ({remote})\n"
+        "After=network-online.target\n"
+        "Wants=network-online.target\n"
+        "\n"
+        "[Service]\n"
+        "Type=notify\n"
+        f"ExecStart={start}\n"
+        f"ExecStop={stop}\n"
+        "TimeoutStopSec=10\n"
+        "SuccessExitStatus=143\n"
+        "Restart=on-failure\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
+    exec_lines = [line for line in body.splitlines() if line.startswith("Exec")]
+    if len(exec_lines) != 2 or any(UNIT_CONTROL_RE.search(line) for line in exec_lines):
+        raise ValueError("Invalid unit content")
     unit_path.write_text(body, encoding="utf-8")
     return unit, str(unit_path)
 
@@ -776,7 +859,14 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
     if not remote:
         return fail("No remote to remove")
-    mount = str(Path(args.mount).expanduser()) if args.mount else find_mount(remote)
+    try:
+        if args.mount:
+            mount = safe_mount_path(args.mount, remote)
+        else:
+            found = find_mount(remote)
+            mount = safe_mount_path(found, remote) if found else ""
+    except ValueError:
+        mount = ""
     unit = safe_unit_name(getattr(args, "unit", ""), remote)
     # Detach FUSE first so systemctl stop does not hang on a busy mount.
     lazy_unmount(mount)
@@ -812,6 +902,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 
 
 def finish_mount(binary: str, remote: str, account: str, region: str, token: str, mount: str, rc: str) -> int:
+    mount = safe_mount_path(mount, remote)
     Path(mount).mkdir(parents=True, exist_ok=True)
     error = create_remote(binary, remote, account, region, token)
     if error:
@@ -857,7 +948,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
         remote = sanitize_remote(args.remote or "")
         if not remote or remote not in remotes:
             return fail("No existing remote to reconnect")
-        mount = resolve_mount(args.mount, remote)
+        try:
+            mount = resolve_mount(args.mount, remote)
+        except ValueError as exc:
+            return fail(str(exc))
         Path(mount).mkdir(parents=True, exist_ok=True)
         unit = f"rclone-{remote}.service"
         stop_user_unit(unit, mount)
@@ -886,7 +980,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
     remote = remote_from_email(email_from_token_blob(token), remotes)
     if not remote:
         return fail("Microsoft did not return an email for this account")
-    mount = resolve_mount(args.mount, remote)
+    try:
+        mount = resolve_mount(args.mount, remote)
+    except ValueError as exc:
+        return fail(str(exc))
     emit_line({"ok": True, "action": "setup", "phase": "mounting", "remote": remote})
     return finish_mount(binary, remote, account, region, token, mount, args.rc)
 
