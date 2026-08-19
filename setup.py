@@ -1052,7 +1052,7 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     binary = rclone_bin()
     if not binary:
         return fail("rclone is not installed")
-    remote = re.sub(r"[^A-Za-z0-9_-]+", "", args.remote or "")
+    remote = sanitize_remote(args.remote or "")
     if not remote:
         return fail("No remote to remove")
     leftover = find_mount(remote)
