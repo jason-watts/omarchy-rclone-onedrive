@@ -26,7 +26,7 @@
       "remote": "",
       "mountPath": "",
       "unit": "",
-      "rcUrl": "http://127.0.0.1:5572"
+      "rcUrl": ""
     },
     "schema": [
       {
@@ -68,8 +68,8 @@
       {
         "key": "rcUrl",
         "type": "string",
-        "label": "rclone RC URL",
-        "defaultValue": "http://127.0.0.1:5572"
+        "label": "Unused (RC is a per-user unix socket)",
+        "defaultValue": ""
       }
     ]
   }

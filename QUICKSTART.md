@@ -59,4 +59,4 @@ In the panel:
 | rclone remote | signed-in account domain (`omarchy@hey.com` → `hey-com`) in `~/.config/rclone/rclone.conf` |
 | Mount | `~/onedrive/<name>` |
 | systemd unit | `~/.config/systemd/user/rclone-<name>.service` |
-| RC | `http://127.0.0.1:5572` |
+| RC | `$XDG_RUNTIME_DIR/omarchy-rclone-onedrive.sock` (unix socket, no `--rc-no-auth`) |

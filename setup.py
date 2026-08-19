@@ -347,7 +347,7 @@ def sanitize_remote(name: str) -> str:
 UNIT_NAME_RE = re.compile(r"^rclone-[A-Za-z0-9_-]+\.service$")
 UNIT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 MOUNT_INPUT_RE = re.compile(r"^(?:~(?:/|$)|/)[A-Za-z0-9._/-]*$")
-RC_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+RC_SOCKET_NAME = "omarchy-rclone-onedrive.sock"
 UNIT_KEYS = frozenset(
     {
         "Description",
@@ -525,25 +525,27 @@ def ensure_mount_dir(remote: str) -> str:
     return str(path)
 
 
+def runtime_dir() -> Path:
+    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+
+
+def plugin_rc_socket() -> Path:
+    return runtime_dir() / RC_SOCKET_NAME
+
+
+def plugin_rc_addr() -> str:
+    return f"unix://{plugin_rc_socket()}"
+
+
 def safe_rc_addr(rc_url: str) -> str:
-    raw = (rc_url or "http://127.0.0.1:5572").strip()
-    if not raw or any(ord(ch) < 32 or ord(ch) > 126 for ch in (rc_url or raw)):
+    """RC listens on a per-user unix socket. HTTP/TCP settings are ignored."""
+    del rc_url
+    addr = plugin_rc_addr()
+    if UNIT_CONTROL_RE.search(addr) or any(ord(ch) > 126 for ch in addr):
         raise ValueError("Invalid RC address")
-    if UNIT_CONTROL_RE.search(rc_url or "") or UNIT_CONTROL_RE.search(raw):
+    if not addr.startswith("unix:///"):
         raise ValueError("Invalid RC address")
-    parsed = urlparse(raw if "://" in raw else f"http://{raw}")
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise ValueError("Invalid RC address")
-    host = parsed.hostname
-    try:
-        port = parsed.port if parsed.port is not None else 5572
-    except ValueError as exc:
-        raise ValueError("Invalid RC address") from exc
-    if host not in RC_LOOPBACK or not (1 <= port <= 65535):
-        raise ValueError("RC must listen on localhost")
-    if host == "::1":
-        return f"[::1]:{port}"
-    return f"127.0.0.1:{port}"
+    return addr
 
 
 def resolve_mount(explicit: str, remote: str) -> str:
@@ -746,7 +748,6 @@ def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
             "--rc",
             "--rc-addr",
             systemd_exec_arg(rc_addr),
-            "--rc-no-auth",
         ]
     )
     stop = " ".join(
@@ -1140,7 +1141,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote", default="")
     parser.add_argument("--mount", default="")
     parser.add_argument("--unit", default="")
-    parser.add_argument("--rc", default="http://127.0.0.1:5572")
+    parser.add_argument("--rc", default="")
     parser.add_argument("--reconnect", action="store_true")
     return parser
 

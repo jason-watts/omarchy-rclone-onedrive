@@ -19,7 +19,8 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_RC = "http://127.0.0.1:5572"
+DEFAULT_RC = ""
+RC_SOCKET_NAME = "omarchy-rclone-onedrive.sock"
 
 AUTH_RE = re.compile(
     r"401|unauthoriz|unauthenticat|invalid_grant|token expired|"
@@ -340,12 +341,18 @@ def probe_mount(mount_path: str) -> bool:
     return code == 0
 
 
+def plugin_rc_socket() -> Path:
+    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / RC_SOCKET_NAME
+
+
 def rc_json(rc_url: str, method: str) -> tuple[bool, dict]:
+    del rc_url
     binary = rclone_bin()
-    if not binary:
+    sock = plugin_rc_socket()
+    if not binary or not sock.is_socket():
         return False, {}
     code, stdout, _stderr = run(
-        [binary, "rc", "--url", rc_url, method], timeout=1.5
+        [binary, "rc", "--unix-socket", str(sock), method], timeout=1.5
     )
     if code != 0:
         return False, {}

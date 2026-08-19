@@ -112,11 +112,9 @@ Item {
     var remote = String(setting("remote", ""))
     var mountPath = String(setting("mountPath", ""))
     var unit = String(setting("unit", ""))
-    var rcUrl = String(setting("rcUrl", "http://127.0.0.1:5572"))
     if (remote !== "") args = args.concat(["--remote", remote])
     if (mountPath !== "") args = args.concat(["--mount", mountPath])
     if (unit !== "") args = args.concat(["--unit", unit])
-    if (rcUrl !== "") args = args.concat(["--rc", rcUrl])
     return args
   }
 
