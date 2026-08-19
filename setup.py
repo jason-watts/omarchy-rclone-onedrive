@@ -731,6 +731,8 @@ def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     unit_path = resolved_user_unit(unit)
     if unit_path is None:
         raise ValueError("Invalid unit name")
+    if unit_path.is_symlink():
+        raise ValueError("Unit path is a symlink")
     mount = safe_mount_path(mount, remote)
     rc_addr = safe_rc_addr(rc_url)
     binary = rclone_bin()
@@ -838,31 +840,28 @@ def safe_unit_name(unit: str, remote: str) -> str:
     return expected
 
 
-def resolved_user_unit(unit: str) -> Path | None:
+def lexical_unit_path(root: Path, unit: str) -> Path | None:
+    """Join a unit name under root without following a same-directory symlink."""
     if not UNIT_NAME_RE.fullmatch(unit or ""):
         return None
-    root = user_systemd_root()
-    path = (root / unit).resolve()
-    try:
-        path.relative_to(root)
-    except ValueError:
+    if Path(unit).name != unit:
         return None
+    path = root / unit
     if path.parent != root:
         return None
     return path
 
 
+def resolved_user_unit(unit: str) -> Path | None:
+    return lexical_unit_path(user_systemd_root(), unit)
+
+
 def resolved_unit_wants(unit: str) -> Path | None:
-    if not UNIT_NAME_RE.fullmatch(unit or ""):
-        return None
     root = user_systemd_root()
-    wants = (root / "default.target.wants").resolve()
-    path = (wants / unit).resolve()
-    try:
-        path.relative_to(wants)
-    except ValueError:
+    wants = root / "default.target.wants"
+    if wants.exists() and not wants.is_dir():
         return None
-    return path
+    return lexical_unit_path(wants, unit)
 
 
 def user_unit_path(unit: str) -> Path | None:
@@ -879,7 +878,7 @@ def disable_user_unit(unit: str) -> None:
         timeout=20,
     )
     path = resolved_user_unit(unit)
-    if path is not None and path.is_file():
+    if path is not None and (path.is_symlink() or path.is_file()):
         path.unlink()
     wants = resolved_unit_wants(unit)
     if wants is not None and (wants.is_symlink() or wants.is_file()):
