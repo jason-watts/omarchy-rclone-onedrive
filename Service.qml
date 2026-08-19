@@ -262,7 +262,7 @@ Item {
     if (!file) return
     var path = String(file.path || file.cachePath || "")
     if (path === "") return
-    Quickshell.execDetached(["xdg-open", path])
+    Quickshell.execDetached(["xdg-open", "--", path])
   }
 
   function cancelSetup() {

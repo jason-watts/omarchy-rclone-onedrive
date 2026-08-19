@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import os
+import pwd
 import re
 import signal
 import shutil
@@ -54,7 +55,7 @@ def emit(payload: dict) -> int:
 
 
 def fail(error: str, **extra) -> int:
-    payload = {"ok": False, "error": error[:400]}
+    payload = {"ok": False, "error": public_error(error)[:400]}
     payload.update(extra)
     return emit(payload)
 
@@ -63,8 +64,27 @@ FUSERMOUNT3 = Path("/usr/bin/fusermount3")
 RCLONE_DIRS = (Path("/usr/bin"), Path("/usr/local/bin"))
 
 
+def real_home() -> Path:
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+    except (KeyError, OSError):
+        return Path.home().resolve()
+
+
+def runtime_dir() -> Path:
+    expected = Path(f"/run/user/{os.getuid()}")
+    raw = os.environ.get("XDG_RUNTIME_DIR")
+    if raw:
+        try:
+            if Path(raw).resolve() == expected.resolve():
+                return expected
+        except OSError:
+            pass
+    return expected
+
+
 def rclone_allowed_dirs() -> set[Path]:
-    dirs = {*RCLONE_DIRS, Path.home() / ".local" / "bin"}
+    dirs = {*RCLONE_DIRS, real_home() / ".local" / "bin"}
     allowed: set[Path] = set()
     for path in dirs:
         try:
@@ -81,7 +101,7 @@ def rclone_bin() -> str:
         candidates.append(Path(found))
     candidates.extend(
         (
-            Path.home() / ".local" / "bin" / "rclone",
+            real_home() / ".local" / "bin" / "rclone",
             Path("/usr/bin/rclone"),
             Path("/usr/local/bin/rclone"),
         )
@@ -123,26 +143,39 @@ def open_url(url: str) -> None:
     if parsed.scheme not in ("http", "https"):
         return
     subprocess.Popen(
-        ["xdg-open", url],
+        ["xdg-open", "--", url],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
 
 
+def authorize_pid_path() -> Path:
+    return runtime_dir() / "omarchy-rclone-onedrive-authorize.pid"
+
+
 def kill_stale_auth_server() -> None:
-    subprocess.run(
-        ["fuser", "-k", "53682/tcp"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=3,
-    )
-    subprocess.run(
-        ["pkill", "-f", r"rclone authorize onedrive"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=3,
-    )
+    path = authorize_pid_path()
+    if not path.is_file() or path.is_symlink():
+        if path.is_symlink():
+            path.unlink()
+        return
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        path.unlink(missing_ok=True)
+        return
+    if pid <= 1:
+        path.unlink(missing_ok=True)
+        return
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except OSError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    path.unlink(missing_ok=True)
 
 
 def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
@@ -160,6 +193,12 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
         env=env,
         start_new_session=True,
     )
+    pid_path = authorize_pid_path()
+    try:
+        pid_path.write_text(str(proc.pid), encoding="utf-8")
+        pid_path.chmod(0o600)
+    except OSError:
+        pass
 
     def cleanup(*_args: object) -> None:
         if proc.poll() is None:
@@ -167,6 +206,10 @@ def authorize(bin_path: str, auth_url: str, token_url: str) -> tuple[str, str]:
                 os.killpg(proc.pid, signal.SIGTERM)
             except OSError:
                 proc.terminate()
+        try:
+            pid_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
@@ -382,28 +425,55 @@ UNIT_CONSTANT_LINES = {
 
 def public_error(text: str) -> str:
     raw = str(text or "")
-    if "access_token" in raw or "refresh_token" in raw:
+    lowered = raw.lower()
+    if (
+        "access_token" in lowered
+        or "refresh_token" in lowered
+        or "id_token" in lowered
+        or "bearer " in lowered
+        or JWT_RE.search(raw)
+    ):
         return "rclone config failed"
     return raw[:280]
 
 
 def rclone_config_path() -> Path:
-    binary = rclone_bin()
-    if binary:
-        proc = subprocess.run(
-            [binary, "config", "file"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        for line in (proc.stdout or "").splitlines():
-            candidate = line.strip()
-            if candidate.startswith("/") and candidate.endswith("rclone.conf"):
-                return Path(candidate)
-    return Path.home() / ".config" / "rclone" / "rclone.conf"
+    root = real_home() / ".config" / "rclone"
+    path = root / "rclone.conf"
+    if path.is_symlink():
+        try:
+            path.resolve().relative_to(root.resolve())
+        except (OSError, ValueError) as exc:
+            raise ValueError("Invalid rclone config path") from exc
+    return path
+
+
+def write_atomic_file(path: Path, body: str, mode: int | None = None) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    if tmp.is_symlink() or tmp.is_file():
+        tmp.unlink()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    fd = os.open(str(tmp), flags, 0o600 if mode is None else mode)
+    try:
+        os.write(fd, body.encode("utf-8"))
+        if mode is not None:
+            os.fchmod(fd, mode)
+    finally:
+        os.close(fd)
+    os.replace(str(tmp), str(path))
+    if mode is not None:
+        path.chmod(mode)
 
 
 def upsert_ini_value(text: str, section: str, key: str, value: str) -> str:
+    if (
+        UNIT_CONTROL_RE.search(section)
+        or UNIT_CONTROL_RE.search(key)
+        or UNIT_CONTROL_RE.search(value)
+        or "\n" in value
+        or "\r" in value
+    ):
+        raise ValueError("Invalid rclone config value")
     header = f"[{section}]"
     lines = text.splitlines(keepends=True)
     out: list[str] = []
@@ -449,17 +519,15 @@ def write_remote_token(name: str, token: str) -> None:
         raise ValueError("missing remote or token")
     path = rclone_config_path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    current = path.read_text(encoding="utf-8") if path.is_file() and not path.is_symlink() else ""
+    if path.is_symlink():
+        current = ""
     updated = upsert_ini_value(current, remote, "token", token)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(updated, encoding="utf-8")
-    tmp.chmod(0o600)
-    tmp.replace(path)
-    path.chmod(0o600)
+    write_atomic_file(path, updated, 0o600)
 
 
 def plugin_onedrive_root() -> Path:
-    root = Path.home().resolve() / "onedrive"
+    root = real_home() / "onedrive"
     if root.exists() and (root.is_symlink() or not root.is_dir()):
         raise ValueError("Invalid mount path")
     return root
@@ -527,16 +595,24 @@ def ensure_mount_dir(remote: str) -> str:
     return str(path)
 
 
-def runtime_dir() -> Path:
-    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-
-
 def plugin_rc_socket() -> Path:
     return runtime_dir() / RC_SOCKET_NAME
 
 
 def plugin_rc_addr() -> str:
     return f"unix://{plugin_rc_socket()}"
+
+
+def secure_rc_socket() -> None:
+    sock = plugin_rc_socket()
+    for _ in range(25):
+        if sock.is_socket():
+            try:
+                sock.chmod(0o600)
+            except OSError:
+                pass
+            return
+        time.sleep(0.1)
 
 
 def safe_rc_addr(rc_url: str) -> str:
@@ -570,8 +646,7 @@ def remote_from_email(email: str, taken: set[str]) -> str:
 
 
 def pending_path() -> Path:
-    runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-    return runtime / "omarchy-rclone-onedrive-pending.json"
+    return runtime_dir() / "omarchy-rclone-onedrive-pending.json"
 
 
 def clear_pending() -> None:
@@ -669,7 +744,7 @@ def create_remote(bin_path: str, name: str, account: str, region: str, token: st
         state = data.get("State") or ""
         option = data.get("Option") or {}
         if data.get("Error") and not state:
-            return str(data.get("Error"))
+            return public_error(str(data.get("Error")))
         if not state:
             return ""
         if option.get("Name") == "config_token":
@@ -766,9 +841,7 @@ def write_user_unit(remote: str, mount: str, rc_url: str) -> tuple[str, str]:
     lines = unit_file_lines(remote, start, stop)
     validate_unit_lines(lines, remote)
     body = "\n".join(lines) + "\n"
-    tmp = unit_path.with_name(unit_path.name + ".tmp")
-    tmp.write_text(body, encoding="utf-8")
-    tmp.replace(unit_path)
+    write_atomic_file(unit_path, body, 0o644)
     return unit, str(unit_path)
 
 
@@ -829,7 +902,7 @@ def find_mount(remote: str) -> str:
 
 
 def user_systemd_root() -> Path:
-    return (Path.home() / ".config" / "systemd" / "user").resolve()
+    return (real_home() / ".config" / "systemd" / "user").resolve()
 
 
 def safe_unit_name(unit: str, remote: str) -> str:
@@ -859,6 +932,8 @@ def resolved_user_unit(unit: str) -> Path | None:
 def resolved_unit_wants(unit: str) -> Path | None:
     root = user_systemd_root()
     wants = root / "default.target.wants"
+    if wants.is_symlink():
+        return None
     if wants.exists() and not wants.is_dir():
         return None
     return lexical_unit_path(wants, unit)
@@ -1035,6 +1110,7 @@ def finish_mount(binary: str, remote: str, account: str, region: str, token: str
     error = enable_user_unit(unit)
     if error:
         return fail(error, remote=remote, mount=mount, unit=unit)
+    secure_rc_socket()
     for _ in range(8):
         time.sleep(0.4)
         check = subprocess.run(
@@ -1095,6 +1171,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         error = enable_user_unit(unit)
         if error:
             return fail(error, remote=remote, mount=mount, unit=unit)
+        secure_rc_socket()
         return emit(
             {
                 "ok": True,

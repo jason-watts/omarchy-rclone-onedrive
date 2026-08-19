@@ -2,8 +2,7 @@
 """OneDrive / rclone mount status for the jason-watts.rclone-onedrive Omarchy widget.
 
 Fast path never talks to OneDrive and never walks the FUSE mount. Quota is a
-separate `about` subcommand. start/stop/restart use systemctl --user when the
-unit is a user unit, otherwise pkexec systemctl.
+separate `about` subcommand. start/stop/restart use systemctl --user only.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ import argparse
 import heapq
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -48,9 +48,35 @@ def run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
     return completed.returncode, completed.stdout, completed.stderr
 
 
+def real_home() -> Path:
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+    except (KeyError, OSError):
+        return Path.home().resolve()
+
+
+def runtime_dir() -> Path:
+    expected = Path(f"/run/user/{os.getuid()}")
+    raw = os.environ.get("XDG_RUNTIME_DIR")
+    if raw:
+        try:
+            if Path(raw).resolve() == expected.resolve():
+                return expected
+        except OSError:
+            pass
+    return expected
+
+
+def session_user() -> str:
+    try:
+        return pwd.getpwuid(os.getuid()).pw_name
+    except (KeyError, OSError):
+        return ""
+
+
 def rclone_candidates() -> list[Path]:
     return [
-        Path.home() / ".local" / "bin" / "rclone",
+        real_home() / ".local" / "bin" / "rclone",
         Path("/usr/bin/rclone"),
         Path("/usr/local/bin/rclone"),
     ]
@@ -58,7 +84,7 @@ def rclone_candidates() -> list[Path]:
 
 def rclone_allowed_dirs() -> set[Path]:
     allowed: set[Path] = set()
-    for path in (Path("/usr/bin"), Path("/usr/local/bin"), Path.home() / ".local" / "bin"):
+    for path in (Path("/usr/bin"), Path("/usr/local/bin"), real_home() / ".local" / "bin"):
         try:
             allowed.add(path.resolve())
         except OSError:
@@ -190,16 +216,15 @@ def resolve(args: argparse.Namespace) -> argparse.Namespace:
                 args.mount = target
                 break
         if not args.mount and remote:
-            args.mount = str(Path.home() / "onedrive" / remote)
+            args.mount = str(real_home() / "onedrive" / remote)
     if not args.unit:
         args.unit, args.unit_scope = match_unit(remote, str(args.mount or ""))
+        if args.unit_scope != "user":
+            args.unit_scope = "user"
     else:
-        args.unit_scope = "user" if str(getattr(args, "unit_scope", "")) == "user" else ""
-        if not args.unit_scope:
-            user_names = {name for name, scope in list_rclone_units() if scope == "user"}
-            args.unit_scope = "user" if args.unit in user_names else "system"
+        args.unit_scope = "user"
     if not args.vfs and remote:
-        args.vfs = str(Path.home() / ".cache" / "rclone" / "vfs" / remote)
+        args.vfs = str(real_home() / ".cache" / "rclone" / "vfs" / remote)
     if not args.rc:
         args.rc = DEFAULT_RC
     return args
@@ -229,7 +254,7 @@ def unix_timestamp_ms(value: str) -> int:
 
 
 def linger_enabled() -> bool:
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    user = session_user()
     if not user:
         return False
     _code, stdout, _stderr = run(
@@ -239,7 +264,7 @@ def linger_enabled() -> bool:
 
 
 def set_linger(enabled: bool) -> tuple[bool, str]:
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    user = session_user()
     if not user:
         return False, "No USER"
     verb = "enable-linger" if enabled else "disable-linger"
@@ -342,7 +367,7 @@ def probe_mount(mount_path: str) -> bool:
 
 
 def plugin_rc_socket() -> Path:
-    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / RC_SOCKET_NAME
+    return runtime_dir() / RC_SOCKET_NAME
 
 
 def rc_json(rc_url: str, method: str) -> tuple[bool, dict]:
@@ -351,6 +376,10 @@ def rc_json(rc_url: str, method: str) -> tuple[bool, dict]:
     sock = plugin_rc_socket()
     if not binary or not sock.is_socket():
         return False, {}
+    try:
+        sock.chmod(0o600)
+    except OSError:
+        pass
     code, stdout, _stderr = run(
         [binary, "rc", "--unix-socket", str(sock), method], timeout=1.5
     )
@@ -660,12 +689,9 @@ def cmd_linger(args: argparse.Namespace) -> int:
 def cmd_control(args: argparse.Namespace) -> int:
     verb = args.command
     unit = str(args.unit or "")
-    if not re.fullmatch(r"rclone-[A-Za-z0-9_.-]+\.service", unit):
+    if not re.fullmatch(r"rclone-[A-Za-z0-9_-]+\.service", unit):
         return emit({"ok": False, "action": verb, "error": "No rclone unit found"})
-    if getattr(args, "unit_scope", "system") == "user":
-        command = ["systemctl", "--user", verb, unit]
-    else:
-        command = ["pkexec", "systemctl", verb, unit]
+    command = ["systemctl", "--user", verb, unit]
     code, stdout, stderr = run(command, timeout=30.0)
     if code != 0:
         return emit(
