@@ -26,9 +26,11 @@ from urllib.request import Request, urlopen
 
 URL_RE = re.compile(r"https?://[^\s\"'<>]+")
 TOKEN_RE = re.compile(r"\{[^{}]*\"access_token\"[^{}]*\}", re.S)
+# rclone's documented no-SharePoint set, plus Graph identity so we can name
+# the remote from the account domain. Sites.Read.All is omitted on purpose.
 ACCESS_SCOPES = (
     "Files.Read Files.ReadWrite Files.Read.All Files.ReadWrite.All "
-    "Sites.Read.All offline_access openid email profile User.Read"
+    "offline_access openid email profile User.Read"
 )
 JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 
@@ -619,6 +621,8 @@ def pick_result(option: dict, account: str, ends: dict[str, str]) -> str:
         return "onedrive"
     if name == "access_scopes":
         return ACCESS_SCOPES
+    if name == "disable_site_permission":
+        return "true"
     if name == "config_refresh_token":
         return "false"
     if name == "config_token":
