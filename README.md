@@ -1,6 +1,10 @@
 # rclone OneDrive
 
-Automate your OneDrive rclone configuration from the Omarchy bar. Sign in with Microsoft, mount the drive at `~/onedrive/<name>`, and open it in Files or a terminal.
+One click. OneDrive mounted.
+
+Select your personal or work OneDrive account and it mounts automatically after a browser authentication. Your files will be in `~/onedrive/{domain.name}`.
+
+Open in Files or Terminal.
 
 ## 1. Install
 
