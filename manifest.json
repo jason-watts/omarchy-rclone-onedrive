@@ -6,7 +6,7 @@
   "author": "Jason Watts",
   "license": "MIT",
   "homepage": "https://github.com/jason-watts/omarchy-rclone-onedrive",
-  "description": "Automate your OneDrive rclone configuration from the Omarchy bar.",
+  "description": "One click. OneDrive mounted. Select your personal or work account; after browser sign-in, files are at ~/onedrive/{domain.name}.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "rclone OneDrive",
-    "description": "Automate your OneDrive rclone configuration from the Omarchy bar.",
+    "description": "One click. OneDrive mounted. Select your personal or work account; after browser sign-in, files are at ~/onedrive/{domain.name}.",
     "category": "Files",
     "aliases": ["onedrive", "rclone", "mount"],
     "allowMultiple": false,
